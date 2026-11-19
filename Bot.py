@@ -160,7 +160,6 @@ def enviar_alerta_telegram_con_share(mensaje_html, partido_info, clave_alerta=No
     if resp and resp.ok:
         log_diag(f"Alerta enviada -> Pick #{apuesta_id}: {partido_info}")
 
-
 def escanear_mercados_avanzados():
     global partidos_globales_activos
     if not API_KEY:
@@ -207,8 +206,12 @@ def escanear_mercados_avanzados():
 
                 score_info = m.get("score", {}).get("fullTime", {})
                 home_goals = score_info.get("home") if score_info.get("home") is not None else 0
-                away_goals = score_info.get("score", {}).get("fullTime", {}).get("away") if score_info.get("score", {}).get("fullTime", {}).get("away") is not None else 0
-                elapsed = 0
+                
+                # CORREGIDO: Apunta directo a score_info
+                away_goals = score_info.get("away") if score_info.get("away") is not None else 0
+                
+                # Intentar capturar el minuto si la API lo provee, o dejarlo en 0 de forma segura
+                elapsed = m.get("minute") if m.get("minute") is not None else 0
                 
                 lista_temp.append({
                     "fixture_id": match_id,
@@ -236,7 +239,6 @@ def escanear_mercados_avanzados():
             log_diag(f"Excepción al consultar football-data.org (intento {intento}): {e}")
             time.sleep(2)
             
-
 
 
 def enviar_menu_principal(chat_id):
