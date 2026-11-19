@@ -430,7 +430,7 @@ def evaluar_y_notificar_avanzado():
             condicion_cuota_over25 = (cuota_over25 is not None and cuota_over25 >= 2.0)
             
             if total_goles >= 3 and condicion_cuota_over25 and f"{fixture_id}_ov25" not in partidos_alertados_hoy:
-texto_alerta = (
+                texto_alerta = (
                     f"🚨 **¡ALERTA: OVER 2.5 GOLES!** 🚨\n\n"
                     f"🏆 **{competition}**\n"
                     f"⚽ {home_team} **{home_goals} - {away_goals}** {away_team} (Total: {total_goles})\n"
@@ -443,7 +443,7 @@ texto_alerta = (
 
     log_diag(f"Evaluación completada
                 
-def _poll_updates(offset: int):
+ def _poll_updates(offset: int):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates?offset={offset}&timeout=30"
     return SESSION.get(url, timeout=35)
 
