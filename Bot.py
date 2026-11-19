@@ -6,11 +6,15 @@ from flask import Flask
 import requests
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-FOOTBALL_API_KEY = os.environ.get("FOOTBALL_API_KEY")
+# Usaremos la llave de API-Football
+API_FOOTBALL_KEY = os.environ.get("APIFOOTBALL_KEY") or os.environ.get("FOOTBALL_API_KEY")
 
-HEADERS = {"X-Auth-Token": FOOTBALL_API_KEY} if FOOTBALL_API_KEY else {}
+# Headers específicos para API-Football (RapidAPI o API-Sports directo)
+HEADERS = {
+    "x-apisports-key": API_FOOTBALL_KEY
+} if API_FOOTBALL_KEY else {}
+
 CHAT_ID = None
-
 partidos_globales_activos = []
 historial_apuestas = []
 
@@ -18,7 +22,7 @@ app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "Tobipybot Pro Definitivo operativo 24/7 🚀"
+    return "Tobipybot Pro con API-Football operativo 24/7 🚀"
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
@@ -65,40 +69,47 @@ def enviar_alerta_telegram_con_share(mensaje, partido_info):
 
 def escanear_mercados_avanzados():
     global partidos_globales_activos
-    if not FOOTBALL_API_KEY:
+    if not API_FOOTBALL_KEY:
         return
+    
     hoy_str = datetime.now().strftime("%Y-%m-%d")
-    url = f"https://api.football-data.org/v4/matches?dateFrom={hoy_str}&dateTo={hoy_str}"
+    # Endpoint oficial de partidos en vivo / de hoy para API-Sports / API-Football
+    url = f"https://v3.football.api-sports.io/fixtures?date={hoy_str}"
     
     for intento in range(3):
         try:
             response = requests.get(url, headers=HEADERS, timeout=15)
             if response.ok:
                 data = response.json()
-                matches = data.get("matches", [])
+                matches = data.get("response", [])
                 lista_temp = []
+                
                 for m in matches:
-                    utc_date = m.get("utcDate", "")
-                    status = m.get("status", "")
+                    fixture = m.get("fixture", {})
+                    league = m.get("league", {})
+                    teams = m.get("teams", {})
+                    goals = m.get("goals", {})
                     
-                    if not utc_date.startswith(hoy_str):
-                        continue
-                    if status not in ["LIVE", "IN_PLAY", "PAUSED", "TIMED"]:
+                    status_short = fixture.get("status", {}).get("short", "")
+                    elapsed = fixture.get("status", {}).get("elapsed", 0)
+                    
+                    # Filtramos solo partidos en juego o por comenzar hoy
+                    if status_short not in ["1H", "HT", "2H", "ET", "P", "LIVE", "NS"]:
                         continue
 
-                    home = m.get("homeTeam", {}).get("name", "Local")
-                    away = m.get("awayTeam", {}).get("name", "Visitante")
-                    competition = m.get("competition", {}).get("name", "Liga Internacional")
-                    minute = m.get("minute", 0)
-                    if status == "TIMED":
-                        minute = 0
+                    home = teams.get("home", {}).get("name", "Local")
+                    away = teams.get("away", {}).get("name", "Visitante")
+                    competition = league.get("name", "Liga Internacional")
+                    
+                    if not elapsed:
+                        elapsed = 0
                         
                     lista_temp.append({
                         "competition": competition,
                         "home_team": home,
                         "away_team": away,
-                        "minute": minute,
-                        "status": status,
+                        "minute": elapsed,
+                        "status": status_short,
                         "odds_home": 1.95,
                         "odds_corners": 2.05,
                         "odds_over15": 1.75,
@@ -129,7 +140,7 @@ def enviar_menu_principal(chat_id):
     }
     payload = {
         "chat_id": chat_id,
-        "text": "👋 ¡Panel Pro Definitivo de **Tobipybot** activo!\n\nSelecciona una opción:",
+        "text": "👋 ¡Panel Pro API-Football de **Tobipybot** activo!\n\nSelecciona una opción:",
         "parse_mode": "Markdown",
         "reply_markup": teclado
     }
@@ -194,7 +205,7 @@ async def escuchar_comandos_telegram():
                             mostrar_historial_y_yield(CHAT_ID)
                         elif data == "actualizar":
                             escanear_mercados_avanzados()
-                            responder_accion(CHAT_ID, f"🔄 ¡Datos actualizados!\n🏆 Partidos de hoy: {len(partidos_globales_activos)}")
+                            responder_accion(CHAT_ID, f"🔄 ¡Datos actualizados vía API-Football!\n🏆 Partidos de hoy: {len(partidos_globales_activos)}")
                         elif data == "copiar_formato":
                             responder_accion(CHAT_ID, "📋 *Formato listo para compartir en tu grupo de análisis.*")
                         
@@ -262,9 +273,9 @@ def mostrar_lista_partidos(chat_id):
     if not partidos_globales_activos:
         responder_accion(chat_id, "⚠️ No hay partidos programados o en juego para el día de hoy.")
         return
-    resp = "📋 **Partidos de HOY bajo vigilancia:**\n\n"
+    resp = "📋 **Partidos de HOY (API-Football):**\n\n"
     for r in partidos_globales_activos[:8]:
-        resp += f"🏆 *{r['competition']}*\n⚽ {r['home_team']} vs {r['away_team']}\n⏱️ Estado: `{r['status']}`\n\n"
+        resp += f"🏆 *{r['competition']}*\n⚽ {r['home_team']} vs {r['away_team']}\n⏱️ Estado: `{r['status']}` | Min: `{r['minute']}`\n\n"
     
     teclado = {
         "inline_keyboard": [
@@ -281,7 +292,8 @@ def evaluar_y_notificar_avanzado():
         home = match["home_team"]
         away = match["away_team"]
 
-        if status in ["LIVE", "IN_PLAY", "PAUSED"]:
+        # Si está en juego (1H, 2H, LIVE)
+        if status in ["1H", "2H", "ET", "LIVE"]:
             if 20 <= minute <= 75 and 1.90 <= match["odds_home"] <= 2.10:
                 enviar_alerta_telegram_con_share(
                     f"🎯 *[PICK PRO: CUOTA 2]*\n🏆 *{comp}*\n🏟️ *{home} vs {away}* (Min {minute}')\n💰 Mercado: *Gana {home}*\n📈 Cuota: *{match['odds_home']:.2f}*",
@@ -315,7 +327,8 @@ async def ciclo_monitoreo():
             evaluar_y_notificar_avanzado()
         except Exception:
             pass
-        await asyncio.sleep(120)
+        # Intervalo de 3 minutos para cuidar las 100 peticiones diarias del plan gratuito
+        await asyncio.sleep(180)
 
 async def main():
     t = Thread(target=run_flask)
@@ -325,4 +338,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-    
+            
