@@ -319,13 +319,12 @@ def mostrar_historial_y_yield(chat_id):
 
     teclado = {"inline_keyboard": [[{"text": "🔄 Refrescar Historial", "callback_data": "ver_historial"}]]}
     responder_accion(chat_id, resp, teclado_extra=teclado)
-    
+
 def mostrar_lista_partidos(chat_id):
     if not partidos_globales_activos:
         responder_accion(chat_id, "⚠️ No hay partidos programados o en juego para el día de hoy.")
         return
 
-    # Filtrar solo los que NO hayan terminado (excluir FINISHED, POSTPONED, etc.)
     partidos_activos_hoy = [
         r for r in partidos_globales_activos 
         if r["status"] not in ["FINISHED", "POSTPONED", "CANCELLED", "SUSPENDED"]
@@ -350,22 +349,23 @@ def mostrar_lista_partidos(chat_id):
 
     teclado = {"inline_keyboard": [[{"text": "🔄 Refrescar", "callback_data": "ver_partidos"}]]}
     responder_accion(chat_id, resp, teclado_extra=teclado)
-    
+
+def construir_texto_alerta(liga_nombre, equipo_local, equipo_visita, goles_local, goles_visita, minuto, estado_partido, mercado_recomendado):
     liga_esc = html.escape(str(liga_nombre))
     local_esc = html.escape(str(equipo_local))
-    visitante_esc = html.escape(str(equipo_visitante))
+    visitante_esc = html.escape(str(equipo_visita))
     estado_esc = html.escape(str(estado_partido))
     mercado_esc = html.escape(str(mercado_recomendado))
 
     return (
-        f"🚨 <b>¡Oportunidad Detectada!</b>\n\n"
+        f"🚨 <b>¡Oportunidad Detectada!</b> 🔔\n\n"
         f"🏆 <b>{liga_esc}</b>\n"
-        f"⚽ {local_esc} vs {visitante_esc}\n"
-        f"📊 <b>Marcador Actual:</b> {goles_local} - {goles_visitante}\n"
-        f"⏱️ Minuto: {minuto}' ({estado_esc})\n\n"
-        f"🔥 <b>Mercado sugerido:</b> {mercado_esc}"
+        f"⚽ <b>{local_esc}</b> vs <b>{visitante_esc}</b>\n"
+        f"⏱️ <b>Marcador Actual:</b> <code>{goles_local} - {goles_visita}</code>\n"
+        f"⏳ <b>Minuto:</b> <code>{minuto}</code> ({estado_esc})\n\n"
+        f"💡 <b>Mercado sugerido:</b> <code>{mercado_esc}</code>"
     )
-
+    
 
 def evaluar_y_notificar_avanzado():
     alertas_en_ciclo = 0
