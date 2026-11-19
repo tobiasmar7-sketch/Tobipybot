@@ -441,7 +441,8 @@ def evaluar_y_notificar_avanzado():
                 partidos_alertados_hoy.add(f"{fixture_id}_ov25")
                 nuevas_alertas += 1
 
-    log_diag(f"Evaluación completada
+    log_diag(f"Evaluación completada. Nuevas alertas en este ciclo: {nuevas_alertas}")
+    
                 
  def _poll_updates(offset: int):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates?offset={offset}&timeout=30"
