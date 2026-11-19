@@ -9,10 +9,12 @@ from flask import Flask
 import requests
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-API_FOOTBALL_KEY = os.environ.get("APIFOOTBALL_KEY") or os.environ.get("FOOTBALL_API_KEY")
+# Usamos la variable de entorno que ya tienes configurada en Render
+API_KEY = os.environ.get("APIFOOTBALL_KEY") or os.environ.get("FOOTBALL_API_KEY")
 ARCHIVO_ESTADO = "datos_bot.json"
 
-HEADERS = {"x-apisports-key": API_FOOTBALL_KEY} if API_FOOTBALL_KEY else {}
+# football-data.org utiliza X-Auth-Token en lugar de x-apisports-key
+HEADERS = {"X-Auth-Token": API_KEY} if API_KEY else {}
 SESSION = requests.Session()
 
 REGLAS_MERCADOS = {
@@ -95,7 +97,7 @@ def guardar_estado():
 
 @app.route("/")
 def home():
-    return "Tobipybot Pro con API-Football operativo 24/7 🚀"
+    return "Tobipybot Pro con Football-Data operativo 24/7 🚀"
 
 
 def run_flask():
@@ -163,12 +165,12 @@ def enviar_alerta_telegram_con_share(mensaje_html, partido_info, clave_alerta=No
 
 def escanear_mercados_avanzados():
     global partidos_globales_activos
-    if not API_FOOTBALL_KEY:
-        log_diag("Sin clave de API-Football configurada (APIFOOTBALL_KEY / FOOTBALL_API_KEY).")
+    if not API_KEY:
+        log_diag("Sin API Key configurada para football-data.org.")
         return
 
-    hoy_str = datetime.now().strftime("%Y-%m-%d")
-    url = f"https://v3.football.api-sports.io/fixtures?date={hoy_str}"
+    # Endpoint oficial de partidos v4 en football-data.org
+    url = "https://api.football-data.org/v4/matches"
 
     for intento in range(1, 4):
         try:
@@ -176,46 +178,47 @@ def escanear_mercados_avanzados():
             status_code = response.status_code
 
             if status_code == 429:
-                log_diag("API-Football devolvió HTTP 429 (límite de peticiones alcanzado).")
+                log_diag("football-data.org devolvió HTTP 429 (límite de peticiones alcanzado).")
                 time.sleep(5)
                 return
 
             if not response.ok:
-                log_diag(f"API-Football HTTP {status_code} en intento {intento} para fecha {hoy_str}.")
+                log_diag(f"football-data.org HTTP {status_code} en intento {intento}.")
                 time.sleep(2)
                 continue
 
             payload_json = response.json()
-            errors = payload_json.get("errors")
-            if errors:
-                log_diag(f"API-Football reportó errors en respuesta: {errors}")
-
-            matches = payload_json.get("response", [])
+            matches = payload_json.get("matches", [])
             lista_temp = []
             en_vivo = 0
 
             for m in matches:
-                fixture = m.get("fixture", {})
-                league = m.get("league", {})
-                teams = m.get("teams", {})
-                goals = m.get("goals", {})
+                match_id = m.get("id")
+                competition = m.get("competition", {}).get("name", "Liga Internacional")
+                home_team = m.get("homeTeam", {}).get("name", "Local")
+                away_team = m.get("awayTeam", {}).get("name", "Visitante")
+                
+                status_short = m.get("status", "") # Ej: LIVE, IN_PLAY, PAUSED, FINISHED, TIMED
+                if status_short not in ["IN_PLAY", "PAUSED", "LIVE", "TIMED", "1H", "2H"]:
+                    if status_short != "TIMED" and status_short != "SCHEDULED":
+                        pass
 
-                status_short = fixture.get("status", {}).get("short", "")
-                if status_short not in ["1H", "HT", "2H", "ET", "P", "LIVE", "NS"]:
-                    continue
-
-                if status_short in ["1H", "2H", "ET", "LIVE"]:
+                if status_short in ["IN_PLAY", "PAUSED", "LIVE", "1H", "2H"]:
                     en_vivo += 1
 
-                elapsed = fixture.get("status", {}).get("elapsed") or 0
-                home_goals = goals.get("home") if goals.get("home") is not None else 0
-                away_goals = goals.get("away") if goals.get("away") is not None else 0
+                # Extracción de marcadores en football-data.org v4
+                score_info = m.get("score", {}).get("fullTime", {})
+                home_goals = score_info.get("home") if score_info.get("home") is not None else 0
+                away_goals = score_info.get("away") if score_info.get("away") is not None else 0
 
+                # Minuto aproximado o estado
+                elapsed = 0  # football-data a veces maneja el minuto de otra forma en la v4, por defecto 0 si no viene
+                
                 lista_temp.append({
-                    "fixture_id": fixture.get("id"),
-                    "competition": league.get("name", "Liga Internacional"),
-                    "home_team": teams.get("home", {}).get("name", "Local"),
-                    "away_team": teams.get("away", {}).get("name", "Visitante"),
+                    "fixture_id": match_id,
+                    "competition": competition,
+                    "home_team": home_team,
+                    "away_team": away_team,
                     "minute": elapsed,
                     "status": status_short,
                     "home_goals": home_goals,
@@ -230,12 +233,12 @@ def escanear_mercados_avanzados():
 
             partidos_globales_activos = lista_temp
             log_diag(
-                f"Fecha {hoy_str} | Total crudos: {len(matches)} | "
-                f"Activos (NS/Live): {len(partidos_globales_activos)} | En juego: {en_vivo}"
+                f"Total partidos recuperados: {len(matches)} | "
+                f"Procesados: {len(partidos_globales_activos)} | En juego: {en_vivo}"
             )
             return
         except Exception as e:
-            log_diag(f"Excepción al consultar API-Football (intento {intento}): {e}")
+            log_diag(f"Excepción al consultar football-data.org (intento {intento}): {e}")
             time.sleep(2)
 
 
@@ -255,7 +258,7 @@ def enviar_menu_principal(chat_id):
     }
     tg_post("sendMessage", {
         "chat_id": chat_id,
-        "text": "👋 ¡Panel Pro API-Football de <b>Tobipybot</b> activo!\n\nSelecciona una opción:",
+        "text": "👋 ¡Panel Pro Football-Data de <b>Tobipybot</b> activo!\n\nSelecciona una opción:",
         "parse_mode": "HTML",
         "reply_markup": teclado,
     })
@@ -325,7 +328,7 @@ def mostrar_lista_partidos(chat_id):
     if not partidos_globales_activos:
         responder_accion(chat_id, "⚠️ No hay partidos programados o en juego para el día de hoy.")
         return
-    resp = "📋 <b>Partidos de HOY (API-Football):</b>\n\n"
+    resp = "📋 <b>Partidos de HOY (Football-Data):</b>\n\n"
     for r in partidos_globales_activos[:8]:
         comp_esc = html.escape(str(r["competition"]))
         home_esc = html.escape(str(r["home_team"]))
@@ -381,7 +384,7 @@ def evaluar_y_notificar_avanzado():
         goles_visitante = match["away_goals"]
         goles_totales = goles_local + goles_visitante
 
-        if estado_partido not in ["1H", "2H", "ET", "LIVE"]:
+        if estado_partido not in ["IN_PLAY", "PAUSED", "LIVE", "1H", "2H"]:
             continue
 
         # 1) Gana Local con cuota real en rango configurado
@@ -510,7 +513,7 @@ async def escuchar_comandos_telegram():
                             await asyncio.to_thread(escanear_mercados_avanzados)
                             responder_accion(
                                 estado["chat_id"],
-                                f"🔄 ¡Datos actualizados vía API-Football!\n🏆 Partidos de hoy: {len(partidos_globales_activos)}",
+                                f"🔄 ¡Datos actualizados vía Football-Data!\n🏆 Partidos de hoy: {len(partidos_globales_activos)}",
                             )
                         elif data.startswith("share_"):
                             id_str = data.split("_", 1)[1]
@@ -523,52 +526,5 @@ async def escuchar_comandos_telegram():
                                         estado["chat_id"],
                                         f"📤 <b>Pick #{ap['id']}</b>: {partido_esc} @ <code>{ap.get('cuota', 1.95):.2f}</code> | Stake: <code>1U</code>",
                                     )
-                        elif data.startswith(("win_", "loss_", "void_")):
-                            tipo, id_str = data.split("_", 1)
-                            if id_str.isdigit():
-                                apuesta_id = int(id_str)
-                                for ap in estado["historial_apuestas"]:
-                                    if ap["id"] == apuesta_id:
-                                        mapa = {"win": "GANADA", "loss": "PERDIDA", "void": "NULA"}
-                                        ap["estado"] = mapa[tipo]
-                                        guardar_estado()
-                                        responder_accion(
-                                            estado["chat_id"],
-                                            f"📌 <b>Pick #{apuesta_id}</b> marcado como <b>{ap['estado']}</b>",
-                                        )
-                                        break
-        except Exception as e:
-            log_diag(f"Error en loop de Telegram: {e}")
-        await asyncio.sleep(1)
-
-
-async def ciclo_monitoreo():
-    while True:
-        espera = 900  # 15 min por defecto para cuidar las 100 peticiones diarias
-        try:
-            if not estado.get("chat_id"):
-                log_diag("Esperando /start en Telegram para iniciar escaneo automático...")
-            else:
-                await asyncio.to_thread(escanear_mercados_avanzados)
-                evaluar_y_notificar_avanzado()
-                hay_en_vivo = any(
-                    m.get("status") in ["1H", "2H", "ET", "LIVE"]
-                    for m in partidos_globales_activos
-                )
-                espera = 300 if hay_en_vivo else 900
-                log_diag(f"Próximo escaneo automático en {espera // 60} minutos.")
-        except Exception as e:
-            log_diag(f"Error en ciclo_monitoreo: {e}")
-        await asyncio.sleep(espera)
-
-
-async def main():
-    cargar_estado()
-    log_diag("Iniciando Tobipybot Pro...")
-    t = Thread(target=run_flask, daemon=True)
-    t.start()
-    await asyncio.gather(escuchar_comandos_telegram(), ciclo_monitoreo())
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+                        elif data.s:
+      
