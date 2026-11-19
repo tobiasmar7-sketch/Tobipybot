@@ -12,15 +12,13 @@ HEADERS = {"X-Auth-Token": FOOTBALL_API_KEY} if FOOTBALL_API_KEY else {}
 CHAT_ID = None
 
 partidos_globales_activos = []
-
-# Base de datos en memoria para historial y estadísticas
 historial_apuestas = []
 
 app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "Tobipybot Pro con Historial y Efectividad operativo 24/7 🚀"
+    return "Tobipybot Pro Definitivo operativo 24/7 🚀"
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
@@ -31,7 +29,6 @@ def enviar_alerta_telegram_con_share(mensaje, partido_info):
     if not CHAT_ID or not TELEGRAM_TOKEN:
         return
     
-    # Creamos un registro pendiente en el historial
     apuesta_id = len(historial_apuestas) + 1
     registro = {
         "id": apuesta_id,
@@ -42,8 +39,6 @@ def enviar_alerta_telegram_con_share(mensaje, partido_info):
     historial_apuestas.append(registro)
 
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    
-    # Teclado interactivo para calificar el resultado de esta apuesta específica
     teclado = {
         "inline_keyboard": [
             [
@@ -105,7 +100,10 @@ def escanear_mercados_avanzados():
                         "minute": minute,
                         "status": status,
                         "odds_home": 1.95,
-                        "odds_corners": 2.05
+                        "odds_corners": 2.05,
+                        "odds_over15": 1.75,
+                        "odds_over25": 2.10,
+                        "odds_btts": 1.90
                     })
                 partidos_globales_activos = lista_temp
                 return
@@ -131,7 +129,7 @@ def enviar_menu_principal(chat_id):
     }
     payload = {
         "chat_id": chat_id,
-        "text": "👋 ¡Panel Pro de **Tobipybot** con Historial Activo!\n\nSelecciona una opción:",
+        "text": "👋 ¡Panel Pro Definitivo de **Tobipybot** activo!\n\nSelecciona una opción:",
         "parse_mode": "Markdown",
         "reply_markup": teclado
     }
@@ -200,7 +198,6 @@ async def escuchar_comandos_telegram():
                         elif data == "copiar_formato":
                             responder_accion(CHAT_ID, "📋 *Formato listo para compartir en tu grupo de análisis.*")
                         
-                        # Gestión dinámica de resultados por ID de apuesta
                         elif data.startswith("win_") or data.startswith("loss_") or data.startswith("void_"):
                             partes = data.split("_")
                             tipo = partes[0]
@@ -235,8 +232,6 @@ def mostrar_historial_y_yield(chat_id):
     
     total_finalizadas = ganadas + perdidas
     winrate = (ganadas / total_finalizadas * 100) if total_finalizadas > 0 else 0
-    
-    # Cálculo de unidades netas (asumiendo cuota promedio 1.95 para ganadas)
     unidades_ganadas = (ganadas * 0.95) - perdidas
     yield_val = (unidades_ganadas / total_finalizadas * 100) if total_finalizadas > 0 else 0
 
@@ -249,7 +244,7 @@ def mostrar_historial_y_yield(chat_id):
         f"📜 **Últimos Picks:**\n"
     )
     
-    for ap in historial_apuestas[-5:]: # Muestra los últimos 5
+    for ap in historial_apuestas[-5:]:
         icono = "⏳"
         if ap["estado"] == "GANADA": icono = "✅"
         elif ap["estado"] == "PERDIDA": icono = "❌"
@@ -288,24 +283,29 @@ def evaluar_y_notificar_avanzado():
 
         if status in ["LIVE", "IN_PLAY", "PAUSED"]:
             if 20 <= minute <= 75 and 1.90 <= match["odds_home"] <= 2.10:
-                detalles_partido = f"{home} vs {away} (Cuota 2)"
                 enviar_alerta_telegram_con_share(
-                    f"🎯 *[PICK PRO: CUOTA 2]*\n"
-                    f"🏆 *{comp}*\n"
-                    f"🏟️ *{home} vs {away}* (Min {minute}')\n"
-                    f"💰 Mercado: *Gana {home}*\n"
-                    f"📈 Cuota: *{match['odds_home']:.2f}*",
-                    detalles_partido
+                    f"🎯 *[PICK PRO: CUOTA 2]*\n🏆 *{comp}*\n🏟️ *{home} vs {away}* (Min {minute}')\n💰 Mercado: *Gana {home}*\n📈 Cuota: *{match['odds_home']:.2f}*",
+                    f"{home} vs {away} (Cuota 2)"
                 )
             elif 34 <= minute <= 42:
-                detalles_partido = f"{home} vs {away} (Córners)"
                 enviar_alerta_telegram_con_share(
-                    f"🚩 *[PICK PRO: CÓRNERS]*\n"
-                    f"🏆 *{comp}*\n"
-                    f"🏟️ *{home} vs {away}* (Min {minute}')\n"
-                    f"💰 Mercado: *Over Córners 1ª Mitad*\n"
-                    f"📈 Cuota: *{match['odds_corners']:.2f}*",
-                    detalles_partido
+                    f"🚩 *[PICK PRO: CÓRNERS]*\n🏆 *{comp}*\n🏟️ *{home} vs {away}* (Min {minute}')\n💰 Mercado: *Over Córners 1ª Mitad*\n📈 Cuota: *{match['odds_corners']:.2f}*",
+                    f"{home} vs {away} (Córners)"
+                )
+            elif 46 <= minute <= 60:
+                enviar_alerta_telegram_con_share(
+                    f"⚽ *[PICK PRO: MÁS DE 1.5 GOLES]*\n🏆 *{comp}*\n🏟️ *{home} vs {away}* (Min {minute}')\n💰 Mercado: *Over 1.5 Goles Totales*\n📈 Cuota: *{match['odds_over15']:.2f}*",
+                    f"{home} vs {away} (Over 1.5)"
+                )
+            elif 65 <= minute <= 78:
+                enviar_alerta_telegram_con_share(
+                    f"⚽ *[PICK PRO: MÁS DE 2.5 GOLES]*\n🏆 *{comp}*\n🏟️ *{home} vs {away}* (Min {minute}')\n💰 Mercado: *Over 2.5 Goles Totales*\n📈 Cuota: *{match['odds_over25']:.2f}*",
+                    f"{home} vs {away} (Over 2.5)"
+                )
+            elif 50 <= minute <= 70:
+                enviar_alerta_telegram_con_share(
+                    f"🔥 *[PICK PRO: AMBOS MARCAN]*\n🏆 *{comp}*\n🏟️ *{home} vs {away}* (Min {minute}')\n💰 Mercado: *Ambos Equipos Anotan (Sí)*\n📈 Cuota: *{match['odds_btts']:.2f}*",
+                    f"{home} vs {away} (Ambos Marcan)"
                 )
 
 async def ciclo_monitoreo():
