@@ -319,21 +319,6 @@ def mostrar_historial_y_yield(chat_id):
 
     teclado = {"inline_keyboard": [[{"text": "🔄 Refrescar Historial", "callback_data": "ver_historial"}]]}
     responder_accion(chat_id, resp, teclado_extra=teclado)
-
-
-def mostrar_lista_partidos(chat_id):
-    if not partidos_globales_activos:
-
-
-def construir_texto_alerta(
-    liga_nombre,
-    equipo_local,
-    equipo_visitante,
-    goles_local,
-    goles_visitante,
-    minuto,
-    estado_partido,
-    mercado_recomendado,
     
 def mostrar_lista_partidos(chat_id):
     if not partidos_globales_activos:
