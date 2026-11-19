@@ -9,11 +9,9 @@ from flask import Flask
 import requests
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-# Usamos la variable de entorno que ya tienes configurada en Render
 API_KEY = os.environ.get("APIFOOTBALL_KEY") or os.environ.get("FOOTBALL_API_KEY")
 ARCHIVO_ESTADO = "datos_bot.json"
 
-# football-data.org utiliza X-Auth-Token en lugar de x-apisports-key
 HEADERS = {"X-Auth-Token": API_KEY} if API_KEY else {}
 SESSION = requests.Session()
 
@@ -47,7 +45,7 @@ estado = {
     "chat_id": None,
     "historial_apuestas": [],
     "fecha_alertas": datetime.now().strftime("%Y-%m-%d"),
-    "alertas_enviadas": [],  # clave: "{fixture_id}_{mercado}"
+    "alertas_enviadas": [],
 }
 partidos_globales_activos = []
 
@@ -169,7 +167,6 @@ def escanear_mercados_avanzados():
         log_diag("Sin API Key configurada para football-data.org.")
         return
 
-    # Endpoint oficial de partidos v4 en football-data.org
     url = "https://api.football-data.org/v4/matches"
 
     for intento in range(1, 4):
@@ -198,21 +195,14 @@ def escanear_mercados_avanzados():
                 home_team = m.get("homeTeam", {}).get("name", "Local")
                 away_team = m.get("awayTeam", {}).get("name", "Visitante")
                 
-                status_short = m.get("status", "") # Ej: LIVE, IN_PLAY, PAUSED, FINISHED, TIMED
-                if status_short not in ["IN_PLAY", "PAUSED", "LIVE", "TIMED", "1H", "2H"]:
-                    if status_short != "TIMED" and status_short != "SCHEDULED":
-                        pass
-
+                status_short = m.get("status", "")
                 if status_short in ["IN_PLAY", "PAUSED", "LIVE", "1H", "2H"]:
                     en_vivo += 1
 
-                # Extracción de marcadores en football-data.org v4
                 score_info = m.get("score", {}).get("fullTime", {})
                 home_goals = score_info.get("home") if score_info.get("home") is not None else 0
                 away_goals = score_info.get("away") if score_info.get("away") is not None else 0
-
-                # Minuto aproximado o estado
-                elapsed = 0  # football-data a veces maneja el minuto de otra forma en la v4, por defecto 0 si no viene
+                elapsed = 0
                 
                 lista_temp.append({
                     "fixture_id": match_id,
@@ -387,7 +377,6 @@ def evaluar_y_notificar_avanzado():
         if estado_partido not in ["IN_PLAY", "PAUSED", "LIVE", "1H", "2H"]:
             continue
 
-        # 1) Gana Local con cuota real en rango configurado
         r_home = REGLAS_MERCADOS["home"]
         oh = match.get("odds_home")
         if (
@@ -407,7 +396,6 @@ def evaluar_y_notificar_avanzado():
             )
             alertas_en_ciclo += 1
 
-        # 2) Over 1.5 Goles
         r_o15 = REGLAS_MERCADOS["over15"]
         if (
             r_o15["min_inicio"] <= minuto <= r_o15["min_fin"]
@@ -426,7 +414,6 @@ def evaluar_y_notificar_avanzado():
             )
             alertas_en_ciclo += 1
 
-        # 3) Over 2.5 Goles
         r_o25 = REGLAS_MERCADOS["over25"]
         if (
             r_o25["min_inicio"] <= minuto <= r_o25["min_fin"]
@@ -445,7 +432,6 @@ def evaluar_y_notificar_avanzado():
             )
             alertas_en_ciclo += 1
 
-        # 4) Ambos Marcan (BTTS - Sí)
         r_btts = REGLAS_MERCADOS["btts"]
         solo_uno_anoto = (goles_local > 0) != (goles_visitante > 0)
         if r_btts["min_inicio"] <= minuto <= r_btts["min_fin"] and solo_uno_anoto:
@@ -526,7 +512,7 @@ async def escuchar_comandos_telegram():
                                         estado["chat_id"],
                                         f"📤 <b>Pick #{ap['id']}</b>: {partido_esc} @ <code>{ap.get('cuota', 1.95):.2f}</code> | Stake: <code>1U</code>",
                                     )
-                                                elif data.startswith(("win_", "loss_", "void_")):
+                        elif data.startswith(("win_", "loss_", "void_")):
                             tipo, id_str = data.split("_", 1)
                             if id_str.isdigit():
                                 apuesta_id = int(id_str)
@@ -582,5 +568,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-                                                 
-      
+    
