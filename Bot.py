@@ -368,97 +368,70 @@ def construir_texto_alerta(liga_nombre, equipo_local, equipo_visita, goles_local
         f"💡 <b>Mercado sugerido:</b> <code>{mercado_esc}</code>"
     )
     
+# Conjunto para llevar registro de partidos ya alertados hoy por cada mercado específico
+partidos_alertados_hoy = set()
 
 def evaluar_y_notificar_avanzado():
-    alertas_en_ciclo = 0
-    for match in partidos_globales_activos:
-        fid = match.get("fixture_id")
-        minuto = match["minute"]
-        estado_partido = match["status"]
-        liga_nombre = match["competition"]
-        equipo_local = match["home_team"]
-        equipo_visitante = match["away_team"]
-        goles_local = match["home_goals"]
-        goles_visitante = match["away_goals"]
-        goles_totales = goles_local + goles_visitante
+    global partidos_globales_activos, partidos_alertados_hoy
+    
+    if not partidos_globales_activos:
+        return
 
-        if estado_partido not in ["IN_PLAY", "PAUSED", "LIVE", "1H", "2H"]:
-            continue
+    nuevas_alertas = 0
 
-        r_home = REGLAS_MERCADOS["home"]
-        oh = match.get("odds_home")
-        if (
-            oh is not None
-            and r_home["min_inicio"] <= minuto <= r_home["min_fin"]
-            and r_home["cuota_min"] <= oh <= r_home["cuota_max"]
-        ):
-            mercado = f"Gana {equipo_local} (@{oh:.2f})"
-            enviar_alerta_telegram_con_share(
-                mensaje_html=construir_texto_alerta(
-                    liga_nombre, equipo_local, equipo_visitante,
-                    goles_local, goles_visitante, minuto, estado_partido, mercado
-                ),
-                partido_info=f"{equipo_local} vs {equipo_visitante} ({mercado})",
-                clave_alerta=f"{fid}_home",
-                cuota=oh,
-            )
-            alertas_en_ciclo += 1
+    for p in partidos_globales_activos:
+        fixture_id = p.get("fixture_id")
+        status = p.get("status")
+        home_team = p.get("home_team")
+        away_team = p.get("away_team")
+        competition = p.get("competition")
+        home_goals = p.get("home_goals", 0)
+        away_goals = p.get("away_goals", 0)
+        total_goles = home_goals + away_goals
+        
+        # Evaluamos solo partidos que estén realmente en juego
+        if status in ["IN_PLAY", "LIVE", "1H", "2H"]:
+            
+            # --- MERCADO 1: AMBOS MARCAN (BTTS) ---
+            cuota_btts = p.get("odds_btts")
+            condicion_btts = (home_goals >= 1 and away_goals >= 1)
+            condicion_cuota_btts = (cuota_btts is not None and cuota_btts >= 2.0)
+            
+            if condicion_btts and condicion_cuota_btts and f"{fixture_id}_btts" not in partidos_alertados_hoy:
+                texto_alerta = (
+                    f"🚨 **¡ALERTA: AMBOS MARCAN (BTTS)!** 🚨\n\n"
+                    f"🏆 **{competition}**\n"
+                    f"⚽ {home_team} **{home_goals} - {away_goals}** {away_team}\n"
+                    f"📈 **Cuota:** {cuota_btts}\n\n"
+                    f"💡 *Mercado:* Ambos equipos ya convirtieron en directo."
+                )
+                enviar_mensaje_telegram(texto_alerta)
+                partidos_alertados_hoy.add(f"{fixture_id}_btts")
+                nuevas_alertas += 1
 
-        r_o15 = REGLAS_MERCADOS["over15"]
-        if (
-            r_o15["min_inicio"] <= minuto <= r_o15["min_fin"]
-            and goles_totales <= r_o15["max_goles_totales"]
-        ):
-            cuota_o15 = match.get("odds_over15") or r_o15["cuota_default"]
-            mercado = f"Más de 1.5 Goles (@{cuota_o15:.2f})"
-            enviar_alerta_telegram_con_share(
-                mensaje_html=construir_texto_alerta(
-                    liga_nombre, equipo_local, equipo_visitante,
-                    goles_local, goles_visitante, minuto, estado_partido, mercado
-                ),
-                partido_info=f"{equipo_local} vs {equipo_visitante} (Over 1.5)",
-                clave_alerta=f"{fid}_over15",
-                cuota=cuota_o15,
-            )
-            alertas_en_ciclo += 1
+            # --- MERCADO 2: OVER 1.5 GOLES ---
+            cuota_over15 = p.get("odds_over15")
+            condicion_cuota_over15 = (cuota_over15 is not None and cuota_over15 >= 2.0)
+            
+            if total_goles >= 2 and condicion_cuota_over15 and f"{fixture_id}_ov15" not in partidos_alertados_hoy:
+                texto_alerta = (
+                    f"🚨 **¡ALERTA: OVER 1.5 GOLES!** 🚨\n\n"
+                    f"🏆 **{competition}**\n"
+                    f"⚽ {home_team} **{home_goals} - {away_goals}** {away_team} (Total: {total_goles})\n"
+                    f"📈 **Cuota:** {cuota_over15}\n\n"
+                    f"💡 *Mercado:* Límite de 1.5 superado en directo."
+                )
+                enviar_mensaje_telegram(texto_alerta)
+                partidos_alertados_hoy.add(f"{fixture_id}_ov15")
+                nuevas_alertas += 1
 
-        r_o25 = REGLAS_MERCADOS["over25"]
-        if (
-            r_o25["min_inicio"] <= minuto <= r_o25["min_fin"]
-            and goles_totales == r_o25["goles_totales_exactos"]
-        ):
-            cuota_o25 = match.get("odds_over25") or r_o25["cuota_default"]
-            mercado = f"Más de 2.5 Goles (@{cuota_o25:.2f})"
-            enviar_alerta_telegram_con_share(
-                mensaje_html=construir_texto_alerta(
-                    liga_nombre, equipo_local, equipo_visitante,
-                    goles_local, goles_visitante, minuto, estado_partido, mercado
-                ),
-                partido_info=f"{equipo_local} vs {equipo_visitante} (Over 2.5)",
-                clave_alerta=f"{fid}_over25",
-                cuota=cuota_o25,
-            )
-            alertas_en_ciclo += 1
+            # --- MERCADO 3: OVER 2.5 GOLES ---
+            cuota_over25 = p.get("odds_over25")
+            condicion_cuota_over25 = (cuota_over25 is not None and cuota_over25 >= 2.0)
+            
+            if total_goles >= 3 and condicion_cuota_over25 and f"{fixture_id}_ov25" not in partidos_alertados_hoy:
 
-        r_btts = REGLAS_MERCADOS["btts"]
-        solo_uno_anoto = (goles_local > 0) != (goles_visitante > 0)
-        if r_btts["min_inicio"] <= minuto <= r_btts["min_fin"] and solo_uno_anoto:
-            cuota_btts = match.get("odds_btts") or r_btts["cuota_default"]
-            mercado = f"Ambos Marcan - Sí (@{cuota_btts:.2f})"
-            enviar_alerta_telegram_con_share(
-                mensaje_html=construir_texto_alerta(
-                    liga_nombre, equipo_local, equipo_visitante,
-                    goles_local, goles_visitante, minuto, estado_partido, mercado
-                ),
-                partido_info=f"{equipo_local} vs {equipo_visitante} (BTTS Sí)",
-                clave_alerta=f"{fid}_btts",
-                cuota=cuota_btts,
-            )
-            alertas_en_ciclo += 1
-
-    log_diag(f"Evaluación completada. Nuevas alertas en este ciclo: {alertas_en_ciclo}")
-
-
+                
 def _poll_updates(offset: int):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates?offset={offset}&timeout=30"
     return SESSION.get(url, timeout=35)
