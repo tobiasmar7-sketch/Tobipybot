@@ -323,10 +323,35 @@ def mostrar_historial_y_yield(chat_id):
 
 def mostrar_lista_partidos(chat_id):
     if not partidos_globales_activos:
+
+
+def construir_texto_alerta(
+    liga_nombre,
+    equipo_local,
+    equipo_visitante,
+    goles_local,
+    goles_visitante,
+    minuto,
+    estado_partido,
+    mercado_recomendado,
+    
+def mostrar_lista_partidos(chat_id):
+    if not partidos_globales_activos:
         responder_accion(chat_id, "⚠️ No hay partidos programados o en juego para el día de hoy.")
         return
-    resp = "📋 <b>Partidos de HOY (Football-Data):</b>\n\n"
-    for r in partidos_globales_activos[:8]:
+
+    # Filtrar solo los que NO hayan terminado (excluir FINISHED, POSTPONED, etc.)
+    partidos_activos_hoy = [
+        r for r in partidos_globales_activos 
+        if r["status"] not in ["FINISHED", "POSTPONED", "CANCELLED", "SUSPENDED"]
+    ]
+
+    if not partidos_activos_hoy:
+        responder_accion(chat_id, "⚠️ No hay partidos en juego o por arrancar en este momento.")
+        return
+
+    resp = f"📋 <b>Partidos en vivo / por arrancar (Hoy):</b>\n\n"
+    for r in partidos_activos_hoy[:8]:
         comp_esc = html.escape(str(r["competition"]))
         home_esc = html.escape(str(r["home_team"]))
         away_esc = html.escape(str(r["away_team"]))
@@ -340,18 +365,7 @@ def mostrar_lista_partidos(chat_id):
 
     teclado = {"inline_keyboard": [[{"text": "🔄 Refrescar", "callback_data": "ver_partidos"}]]}
     responder_accion(chat_id, resp, teclado_extra=teclado)
-
-
-def construir_texto_alerta(
-    liga_nombre,
-    equipo_local,
-    equipo_visitante,
-    goles_local,
-    goles_visitante,
-    minuto,
-    estado_partido,
-    mercado_recomendado,
-):
+    
     liga_esc = html.escape(str(liga_nombre))
     local_esc = html.escape(str(equipo_local))
     visitante_esc = html.escape(str(equipo_visitante))
