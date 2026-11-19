@@ -188,8 +188,14 @@ def escanear_mercados_avanzados():
             matches = payload_json.get("matches", [])
             lista_temp = []
             en_vivo = 0
+            
+            hoy_str = datetime.now().strftime("%Y-%m-%d")
 
             for m in matches:
+                utc_date = m.get("utcDate", "")
+                if not utc_date.startswith(hoy_str):
+                    continue
+
                 match_id = m.get("id")
                 competition = m.get("competition", {}).get("name", "Liga Internacional")
                 home_team = m.get("homeTeam", {}).get("name", "Local")
@@ -201,7 +207,7 @@ def escanear_mercados_avanzados():
 
                 score_info = m.get("score", {}).get("fullTime", {})
                 home_goals = score_info.get("home") if score_info.get("home") is not None else 0
-                away_goals = score_info.get("away") if score_info.get("away") is not None else 0
+                away_goals = score_info.get("score", {}).get("fullTime", {}).get("away") if score_info.get("score", {}).get("fullTime", {}).get("away") is not None else 0
                 elapsed = 0
                 
                 lista_temp.append({
@@ -223,13 +229,14 @@ def escanear_mercados_avanzados():
 
             partidos_globales_activos = lista_temp
             log_diag(
-                f"Total partidos recuperados: {len(matches)} | "
-                f"Procesados: {len(partidos_globales_activos)} | En juego: {en_vivo}"
+                f"Total partidos recuperados (hoy): {len(lista_temp)} | En juego: {en_vivo}"
             )
             return
         except Exception as e:
             log_diag(f"Excepción al consultar football-data.org (intento {intento}): {e}")
             time.sleep(2)
+            
+
 
 
 def enviar_menu_principal(chat_id):
