@@ -13,47 +13,53 @@ CHAT_ID = None
 
 partidos_globales_activos = []
 
-estadisticas_sesion = {
-    "enviadas": 0,
-    "acertadas": 0,
-    "unidades_jugadas": 0.0,
-    "unidades_ganadas": 0.0
-}
+# Base de datos en memoria para historial y estadísticas
+historial_apuestas = []
 
 app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "Tobipybot Pro operativo 24/7 con filtro estricto de fecha 🚀"
+    return "Tobipybot Pro con Historial y Efectividad operativo 24/7 🚀"
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
 
-def enviar_alerta_telegram_con_share(mensaje):
-    global CHAT_ID, estadisticas_sesion
+def enviar_alerta_telegram_con_share(mensaje, partido_info):
+    global CHAT_ID, historial_apuestas
     if not CHAT_ID or not TELEGRAM_TOKEN:
         return
     
-    estadisticas_sesion["enviadas"] += 1
-    estadisticas_sesion["unidades_jugadas"] += 1.0
+    # Creamos un registro pendiente en el historial
+    apuesta_id = len(historial_apuestas) + 1
+    registro = {
+        "id": apuesta_id,
+        "partido": partido_info,
+        "estado": "PENDIENTE",
+        "unidades": 1.0
+    }
+    historial_apuestas.append(registro)
 
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    
+    # Teclado interactivo para calificar el resultado de esta apuesta específica
     teclado = {
         "inline_keyboard": [
             [
-                {"text": "✅ Registrar Acierto (+1.0U)", "callback_data": "hit_win"},
-                {"text": "❌ Registrar Fallo", "callback_data": "hit_loss"}
+                {"text": "✅ Ganada", "callback_data": f"win_{apuesta_id}"},
+                {"text": "❌ Perdida", "callback_data": f"loss_{apuesta_id}"},
+                {"text": "➖ Nula", "callback_data": f"void_{apuesta_id}"}
             ],
             [
-                {"text": "📤 Copiar / Formato Comunidad", "callback_data": "copiar_formato"}
+                {"text": "📤 Copiar / Comunidad", "callback_data": "copiar_formato"}
             ]
         ]
     }
     
     payload = {
         "chat_id": CHAT_ID,
-        "text": f"{mensaje}\n\n🤖 _Tobipybot Pro (Gestión Avanzada)_",
+        "text": f"{mensaje}\n\n🆔 *Pick #{apuesta_id}* | 🤖 _Tobipybot Pro_",
         "parse_mode": "Markdown",
         "reply_markup": teclado
     }
@@ -66,7 +72,6 @@ def escanear_mercados_avanzados():
     global partidos_globales_activos
     if not FOOTBALL_API_KEY:
         return
-    # Consultamos partidos del día actual directamente en la URL de la API
     hoy_str = datetime.now().strftime("%Y-%m-%d")
     url = f"https://api.football-data.org/v4/matches?dateFrom={hoy_str}&dateTo={hoy_str}"
     
@@ -78,25 +83,20 @@ def escanear_mercados_avanzados():
                 matches = data.get("matches", [])
                 lista_temp = []
                 for m in matches:
-                    # Filtro de seguridad extra: verificar estado y fecha exacta
                     utc_date = m.get("utcDate", "")
                     status = m.get("status", "")
                     
                     if not utc_date.startswith(hoy_str):
                         continue
-                        
-                    # Aceptamos en juego (LIVE) o programados para hoy
                     if status not in ["LIVE", "IN_PLAY", "PAUSED", "TIMED"]:
                         continue
 
                     home = m.get("homeTeam", {}).get("name", "Local")
                     away = m.get("awayTeam", {}).get("name", "Visitante")
                     competition = m.get("competition", {}).get("name", "Liga Internacional")
-                    
-                    # Si la API no provee minuto exacto, simulamos para pruebas o leemos si existe
                     minute = m.get("minute", 0)
                     if status == "TIMED":
-                        minute = 0 # Partido aún no empieza
+                        minute = 0
                         
                     lista_temp.append({
                         "competition": competition,
@@ -105,9 +105,7 @@ def escanear_mercados_avanzados():
                         "minute": minute,
                         "status": status,
                         "odds_home": 1.95,
-                        "odds_corners": 2.05,
-                        "odds_cards": 1.88,
-                        "odds_shots": 2.15
+                        "odds_corners": 2.05
                     })
                 partidos_globales_activos = lista_temp
                 return
@@ -123,8 +121,8 @@ def enviar_menu_principal(chat_id):
     teclado = {
         "inline_keyboard": [
             [
-                {"text": "📋 Ver Partidos de Hoy", "callback_data": "ver_partidos"},
-                {"text": "📊 Yield & Estadísticas", "callback_data": "ver_yield"}
+                {"text": "📋 Partidos de Hoy", "callback_data": "ver_partidos"},
+                {"text": "📜 Historial & Yield", "callback_data": "ver_historial"}
             ],
             [
                 {"text": "🔄 Actualizar Datos", "callback_data": "actualizar"}
@@ -133,7 +131,7 @@ def enviar_menu_principal(chat_id):
     }
     payload = {
         "chat_id": chat_id,
-        "text": "👋 ¡Panel Pro de **Tobipybot** activo!\n\nFiltro de fecha actualizado a HOY:",
+        "text": "👋 ¡Panel Pro de **Tobipybot** con Historial Activo!\n\nSelecciona una opción:",
         "parse_mode": "Markdown",
         "reply_markup": teclado
     }
@@ -159,7 +157,7 @@ def responder_accion(chat_id, texto, teclado_extra=None):
         pass
 
 async def escuchar_comandos_telegram():
-    global CHAT_ID, estadisticas_sesion
+    global CHAT_ID, historial_apuestas
     if not TELEGRAM_TOKEN:
         return
     offset = 0
@@ -179,8 +177,8 @@ async def escuchar_comandos_telegram():
                             CHAT_ID = chat.get("id")
                         if text in ["/start", "/menu"]:
                             enviar_menu_principal(CHAT_ID)
-                        elif text == "/yield":
-                            mostrar_yield(CHAT_ID)
+                        elif text in ["/historial", "/yield"]:
+                            mostrar_historial_y_yield(CHAT_ID)
 
                     callback_query = result.get("callback_query")
                     if callback_query:
@@ -194,43 +192,76 @@ async def escuchar_comandos_telegram():
                         
                         if data == "ver_partidos":
                             mostrar_lista_partidos(CHAT_ID)
-                        elif data == "ver_yield":
-                            mostrar_yield(CHAT_ID)
+                        elif data == "ver_historial":
+                            mostrar_historial_y_yield(CHAT_ID)
                         elif data == "actualizar":
                             escanear_mercados_avanzados()
-                            responder_accion(CHAT_ID, f"🔄 ¡Datos actualizados!\n🏆 Partidos de hoy vigilados: {len(partidos_globales_activos)}")
-                        elif data == "hit_win":
-                            estadisticas_sesion["acertadas"] += 1
-                            estadisticas_sesion["unidades_ganadas"] += 0.95
-                            responder_accion(CHAT_ID, "✅ *¡Apuesta registrada como ACERTADA!*")
-                        elif data == "hit_loss":
-                            estadisticas_sesion["unidades_ganadas"] -= 1.0
-                            responder_accion(CHAT_ID, "❌ *Apuesta registrada como FALLIDA.*")
+                            responder_accion(CHAT_ID, f"🔄 ¡Datos actualizados!\n🏆 Partidos de hoy: {len(partidos_globales_activos)}")
                         elif data == "copiar_formato":
-                            responder_accion(CHAT_ID, "📋 *Formato copiado para tu comunidad.*")
+                            responder_accion(CHAT_ID, "📋 *Formato listo para compartir en tu grupo de análisis.*")
+                        
+                        # Gestión dinámica de resultados por ID de apuesta
+                        elif data.startswith("win_") or data.startswith("loss_") or data.startswith("void_"):
+                            partes = data.split("_")
+                            tipo = partes[0]
+                            apuesta_id = int(partes[1])
+                            
+                            for ap in historial_apuestas:
+                                if ap["id"] == apuesta_id:
+                                    if tipo == "win":
+                                        ap["estado"] = "GANADA"
+                                        responder_accion(CHAT_ID, f"✅ *Pick #{apuesta_id} actualizado:* Marcado como **GANADA** 🎯")
+                                    elif tipo == "loss":
+                                        ap["estado"] = "PERDIDA"
+                                        responder_accion(CHAT_ID, f"❌ *Pick #{apuesta_id} actualizado:* Marcado como **PERDIDA**")
+                                    elif tipo == "void":
+                                        ap["estado"] = "NULA"
+                                        responder_accion(CHAT_ID, f"➖ *Pick #{apuesta_id} actualizado:* Marcado como **NULA / PUSH**")
+                                    break
 
         except Exception:
             pass
         await asyncio.sleep(2)
 
-def mostrar_yield(chat_id):
-    enviadas = estadisticas_sesion["enviadas"]
-    acertadas = estadisticas_sesion["acertadas"]
-    jugadas = estadisticas_sesion["unidades_jugadas"]
-    ganadas = estadisticas_sesion["unidades_ganadas"]
+def mostrar_historial_y_yield(chat_id):
+    if not historial_apuestas:
+        responder_accion(chat_id, "📜 Aún no hay apuestas registradas en el historial de hoy.")
+        return
+
+    ganadas = sum(1 for ap in historial_apuestas if ap["estado"] == "GANADA")
+    perdidas = sum(1 for ap in historial_apuestas if ap["estado"] == "PERDIDA")
+    nulas = sum(1 for ap in historial_apuestas if ap["estado"] == "NULA")
+    pendientes = sum(1 for ap in historial_apuestas if ap["estado"] == "PENDIENTE")
     
-    winrate = (acertadas / enviadas * 100) if enviadas > 0 else 0
-    yield_val = (ganadas / jugadas * 100) if jugadas > 0 else 0
+    total_finalizadas = ganadas + perdidas
+    winrate = (ganadas / total_finalizadas * 100) if total_finalizadas > 0 else 0
+    
+    # Cálculo de unidades netas (asumiendo cuota promedio 1.95 para ganadas)
+    unidades_ganadas = (ganadas * 0.95) - perdidas
+    yield_val = (unidades_ganadas / total_finalizadas * 100) if total_finalizadas > 0 else 0
 
     resp = (
-        f"📊 **ESTADÍSTICAS Y YIELD (SESIÓN)**\n\n"
-        f"🎯 Alertas enviadas: `{enviadas}`\n"
-        f"✅ Acertadas: `{acertadas}`\n"
-        f"📈 Win Rate: `{winrate:.1f}%`\n"
-        f"💰 Unidades Netas: `{ganadas:+.2f} U`\n"
-        f"📉 Yield Estimado: `{yield_val:+.2f}%`"
+        f"📊 **HISTORIAL Y EFECTIVIDAD (SESIÓN)**\n\n"
+        f"✅ Ganadas: `{ganadas}` | ❌ Perdidas: `{perdidas}` | ➖ Nulas: `{nulas}` | ⏳ Pendientes: `{pendientes}`\n"
+        f"📈 **Win Rate:** `{winrate:.1f}%`\n"
+        f"💰 **Unidades Netas:** `{unidades_ganadas:+.2f} U`\n"
+        f"📉 **Yield:** `{yield_val:+.2f}%`\n\n"
+        f"📜 **Últimos Picks:**\n"
     )
-    responder_accion(chat_id, resp)
+    
+    for ap in historial_apuestas[-5:]: # Muestra los últimos 5
+        icono = "⏳"
+        if ap["estado"] == "GANADA": icono = "✅"
+        elif ap["estado"] == "PERDIDA": icono = "❌"
+        elif ap["estado"] == "NULA": icono = "➖"
+        resp += f"{icono} *#{ap['id']}* - {ap['partido']} [{ap['estado']}]\n"
+
+    teclado = {
+        "inline_keyboard": [
+            [{"text": "🔄 Refrescar Historial", "callback_data": "ver_historial"}]
+        ]
+    }
+    responder_accion(chat_id, resp, teclado_extra=teclado)
 
 def mostrar_lista_partidos(chat_id):
     if not partidos_globales_activos:
@@ -255,23 +286,26 @@ def evaluar_y_notificar_avanzado():
         home = match["home_team"]
         away = match["away_team"]
 
-        # Solo disparamos alertas si el partido está verdaderamente en juego (LIVE)
         if status in ["LIVE", "IN_PLAY", "PAUSED"]:
             if 20 <= minute <= 75 and 1.90 <= match["odds_home"] <= 2.10:
+                detalles_partido = f"{home} vs {away} (Cuota 2)"
                 enviar_alerta_telegram_con_share(
                     f"🎯 *[PICK PRO: CUOTA 2]*\n"
                     f"🏆 *{comp}*\n"
                     f"🏟️ *{home} vs {away}* (Min {minute}')\n"
                     f"💰 Mercado: *Gana {home}*\n"
-                    f"📈 Cuota: *{match['odds_home']:.2f}*"
+                    f"📈 Cuota: *{match['odds_home']:.2f}*",
+                    detalles_partido
                 )
             elif 34 <= minute <= 42:
+                detalles_partido = f"{home} vs {away} (Córners)"
                 enviar_alerta_telegram_con_share(
                     f"🚩 *[PICK PRO: CÓRNERS]*\n"
                     f"🏆 *{comp}*\n"
                     f"🏟️ *{home} vs {away}* (Min {minute}')\n"
                     f"💰 Mercado: *Over Córners 1ª Mitad*\n"
-                    f"📈 Cuota: *{match['odds_corners']:.2f}*"
+                    f"📈 Cuota: *{match['odds_corners']:.2f}*",
+                    detalles_partido
                 )
 
 async def ciclo_monitoreo():
@@ -291,4 +325,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-                            
+    
