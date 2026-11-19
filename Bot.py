@@ -52,6 +52,11 @@ partidos_globales_activos = []
 app = Flask(__name__)
 
 
+def log_diag(msg: str):
+    ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{ahora}] [Tobipybot] {msg}", flush=True)
+
+
 def verificar_rotacion_diaria_alertas():
     hoy_str = datetime.now().strftime("%Y-%m-%d")
     if estado.get("fecha_alertas") != hoy_str:
@@ -67,8 +72,8 @@ def cargar_estado():
                 data = json.load(f)
                 if isinstance(data, dict):
                     estado.update(data)
-        except Exception:
-            pass
+        except Exception as e:
+            log_diag(f"Error al cargar estado: {e}")
     verificar_rotacion_diaria_alertas()
 
 
@@ -79,7 +84,8 @@ def guardar_estado():
         with open(tmp_path, "w", encoding="utf-8") as f:
             json.dump(estado, f, ensure_ascii=False, indent=2)
         os.replace(tmp_path, ARCHIVO_ESTADO)
-    except Exception:
+    except Exception as e:
+        log_diag(f"Error al guardar estado: {e}")
         if os.path.exists(tmp_path):
             try:
                 os.remove(tmp_path)
@@ -103,13 +109,15 @@ def tg_post(method: str, payload: dict, timeout: int = 10):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/{method}"
     try:
         return SESSION.post(url, json=payload, timeout=timeout)
-    except Exception:
+    except Exception as e:
+        log_diag(f"Error en Telegram ({method}): {e}")
         return None
 
 
 def enviar_alerta_telegram_con_share(mensaje_html, partido_info, clave_alerta=None, cuota=1.95, stake=1.0):
     chat_id = estado.get("chat_id")
     if not chat_id or not TELEGRAM_TOKEN:
+        log_diag("Alerta omitida: falta chat_id o TELEGRAM_TOKEN.")
         return
 
     verificar_rotacion_diaria_alertas()
@@ -143,70 +151,92 @@ def enviar_alerta_telegram_con_share(mensaje_html, partido_info, clave_alerta=No
     }
 
     texto_final = f"{mensaje_html}\n\n🆔 <b>Pick #{apuesta_id}</b> | 🤖 <i>Tobipybot Pro</i>"
-    tg_post("sendMessage", {
+    resp = tg_post("sendMessage", {
         "chat_id": chat_id,
         "text": texto_final,
         "parse_mode": "HTML",
         "reply_markup": teclado,
     })
+    if resp and resp.ok:
+        log_diag(f"Alerta enviada -> Pick #{apuesta_id}: {partido_info}")
 
 
 def escanear_mercados_avanzados():
     global partidos_globales_activos
     if not API_FOOTBALL_KEY:
+        log_diag("Sin clave de API-Football configurada (APIFOOTBALL_KEY / FOOTBALL_API_KEY).")
         return
 
     hoy_str = datetime.now().strftime("%Y-%m-%d")
     url = f"https://v3.football.api-sports.io/fixtures?date={hoy_str}"
 
-    for _ in range(3):
+    for intento in range(1, 4):
         try:
             response = SESSION.get(url, headers=HEADERS, timeout=15)
-            if response.status_code == 429:
-                # Límite de peticiones alcanzado en API-Football
+            status_code = response.status_code
+
+            if status_code == 429:
+                log_diag("API-Football devolvió HTTP 429 (límite de peticiones alcanzado).")
                 time.sleep(5)
                 return
-            if response.ok:
-                matches = response.json().get("response", [])
-                lista_temp = []
 
-                for m in matches:
-                    fixture = m.get("fixture", {})
-                    league = m.get("league", {})
-                    teams = m.get("teams", {})
-                    goals = m.get("goals", {})
+            if not response.ok:
+                log_diag(f"API-Football HTTP {status_code} en intento {intento} para fecha {hoy_str}.")
+                time.sleep(2)
+                continue
 
-                    status_short = fixture.get("status", {}).get("short", "")
-                    if status_short not in ["1H", "HT", "2H", "ET", "P", "LIVE", "NS"]:
-                        continue
+            payload_json = response.json()
+            errors = payload_json.get("errors")
+            if errors:
+                log_diag(f"API-Football reportó errors en respuesta: {errors}")
 
-                    elapsed = fixture.get("status", {}).get("elapsed") or 0
-                    home_goals = goals.get("home") if goals.get("home") is not None else 0
-                    away_goals = goals.get("away") if goals.get("away") is not None else 0
+            matches = payload_json.get("response", [])
+            lista_temp = []
+            en_vivo = 0
 
-                    # TODO: Reemplazar cuotas por datos reales de /odds o /odds/live
-                    lista_temp.append({
-                        "fixture_id": fixture.get("id"),
-                        "competition": league.get("name", "Liga Internacional"),
-                        "home_team": teams.get("home", {}).get("name", "Local"),
-                        "away_team": teams.get("away", {}).get("name", "Visitante"),
-                        "minute": elapsed,
-                        "status": status_short,
-                        "home_goals": home_goals,
-                        "away_goals": away_goals,
-                        "score": f"{home_goals}-{away_goals}",
-                        "odds_home": None,
-                        "odds_corners": None,
-                        "odds_over15": None,
-                        "odds_over25": None,
-                        "odds_btts": None,
-                    })
+            for m in matches:
+                fixture = m.get("fixture", {})
+                league = m.get("league", {})
+                teams = m.get("teams", {})
+                goals = m.get("goals", {})
 
-                partidos_globales_activos = lista_temp
-                return
-        except Exception:
-            pass
-        time.sleep(2)
+                status_short = fixture.get("status", {}).get("short", "")
+                if status_short not in ["1H", "HT", "2H", "ET", "P", "LIVE", "NS"]:
+                    continue
+
+                if status_short in ["1H", "2H", "ET", "LIVE"]:
+                    en_vivo += 1
+
+                elapsed = fixture.get("status", {}).get("elapsed") or 0
+                home_goals = goals.get("home") if goals.get("home") is not None else 0
+                away_goals = goals.get("away") if goals.get("away") is not None else 0
+
+                lista_temp.append({
+                    "fixture_id": fixture.get("id"),
+                    "competition": league.get("name", "Liga Internacional"),
+                    "home_team": teams.get("home", {}).get("name", "Local"),
+                    "away_team": teams.get("away", {}).get("name", "Visitante"),
+                    "minute": elapsed,
+                    "status": status_short,
+                    "home_goals": home_goals,
+                    "away_goals": away_goals,
+                    "score": f"{home_goals}-{away_goals}",
+                    "odds_home": None,
+                    "odds_corners": None,
+                    "odds_over15": None,
+                    "odds_over25": None,
+                    "odds_btts": None,
+                })
+
+            partidos_globales_activos = lista_temp
+            log_diag(
+                f"Fecha {hoy_str} | Total crudos: {len(matches)} | "
+                f"Activos (NS/Live): {len(partidos_globales_activos)} | En juego: {en_vivo}"
+            )
+            return
+        except Exception as e:
+            log_diag(f"Excepción al consultar API-Football (intento {intento}): {e}")
+            time.sleep(2)
 
 
 def enviar_menu_principal(chat_id):
@@ -339,6 +369,7 @@ def construir_texto_alerta(
 
 
 def evaluar_y_notificar_avanzado():
+    alertas_en_ciclo = 0
     for match in partidos_globales_activos:
         fid = match.get("fixture_id")
         minuto = match["minute"]
@@ -371,6 +402,7 @@ def evaluar_y_notificar_avanzado():
                 clave_alerta=f"{fid}_home",
                 cuota=oh,
             )
+            alertas_en_ciclo += 1
 
         # 2) Over 1.5 Goles
         r_o15 = REGLAS_MERCADOS["over15"]
@@ -389,6 +421,7 @@ def evaluar_y_notificar_avanzado():
                 clave_alerta=f"{fid}_over15",
                 cuota=cuota_o15,
             )
+            alertas_en_ciclo += 1
 
         # 3) Over 2.5 Goles
         r_o25 = REGLAS_MERCADOS["over25"]
@@ -407,6 +440,7 @@ def evaluar_y_notificar_avanzado():
                 clave_alerta=f"{fid}_over25",
                 cuota=cuota_o25,
             )
+            alertas_en_ciclo += 1
 
         # 4) Ambos Marcan (BTTS - Sí)
         r_btts = REGLAS_MERCADOS["btts"]
@@ -423,6 +457,9 @@ def evaluar_y_notificar_avanzado():
                 clave_alerta=f"{fid}_btts",
                 cuota=cuota_btts,
             )
+            alertas_en_ciclo += 1
+
+    log_diag(f"Evaluación completada. Nuevas alertas en este ciclo: {alertas_en_ciclo}")
 
 
 def _poll_updates(offset: int):
@@ -432,6 +469,7 @@ def _poll_updates(offset: int):
 
 async def escuchar_comandos_telegram():
     if not TELEGRAM_TOKEN:
+        log_diag("TELEGRAM_TOKEN no configurado; polling desactivado.")
         return
     offset = 0
     while True:
@@ -499,23 +537,34 @@ async def escuchar_comandos_telegram():
                                             f"📌 <b>Pick #{apuesta_id}</b> marcado como <b>{ap['estado']}</b>",
                                         )
                                         break
-        except Exception:
-            pass
+        except Exception as e:
+            log_diag(f"Error en loop de Telegram: {e}")
         await asyncio.sleep(1)
 
 
 async def ciclo_monitoreo():
     while True:
+        espera = 900  # 15 min por defecto para cuidar las 100 peticiones diarias
         try:
-            await asyncio.to_thread(escanear_mercados_avanzados)
-            evaluar_y_notificar_avanzado()
-        except Exception:
-            pass
-        await asyncio.sleep(300)
+            if not estado.get("chat_id"):
+                log_diag("Esperando /start en Telegram para iniciar escaneo automático...")
+            else:
+                await asyncio.to_thread(escanear_mercados_avanzados)
+                evaluar_y_notificar_avanzado()
+                hay_en_vivo = any(
+                    m.get("status") in ["1H", "2H", "ET", "LIVE"]
+                    for m in partidos_globales_activos
+                )
+                espera = 300 if hay_en_vivo else 900
+                log_diag(f"Próximo escaneo automático en {espera // 60} minutos.")
+        except Exception as e:
+            log_diag(f"Error en ciclo_monitoreo: {e}")
+        await asyncio.sleep(espera)
 
 
 async def main():
     cargar_estado()
+    log_diag("Iniciando Tobipybot Pro...")
     t = Thread(target=run_flask, daemon=True)
     t.start()
     await asyncio.gather(escuchar_comandos_telegram(), ciclo_monitoreo())
@@ -523,4 +572,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-                
