@@ -17,7 +17,7 @@ app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "Tobipybot está activo y operando 24/7 🚀"
+    return "Tobipybot está activo y operando 24/7 con botones dinámicos 🚀"
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
@@ -74,6 +74,48 @@ def escanear_todas_las_ligas_en_vivo():
         import time
         time.sleep(2)
 
+def enviar_menu_principal(chat_id):
+    if not chat_id or not TELEGRAM_TOKEN:
+        return
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    teclado = {
+        "inline_keyboard": [
+            [
+                {"text": "📋 Ver Partidos", "callback_data": "ver_partidos"},
+                {"text": "🟢 Estado", "callback_data": "ver_status"}
+            ],
+            [
+                {"text": "🔄 Actualizar Datos", "callback_data": "actualizar"}
+            ]
+        ]
+    }
+    payload = {
+        "chat_id": chat_id,
+        "text": "👋 ¡Hola Tobias! Bienvenido al panel dinámico de **Tobipybot**.\n\nElige una opción:",
+        "parse_mode": "Markdown",
+        "reply_markup": teclado
+    }
+    try:
+        requests.post(url, json=payload, timeout=10)
+    except Exception:
+        pass
+
+def responder_accion(chat_id, texto, teclado_extra=None):
+    if not chat_id or not TELEGRAM_TOKEN:
+        return
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": texto,
+        "parse_mode": "Markdown"
+    }
+    if teclado_extra:
+        payload["reply_markup"] = teclado_extra
+    try:
+        requests.post(url, json=payload, timeout=10)
+    except Exception:
+        pass
+
 async def escuchar_comandos_telegram():
     global CHAT_ID
     if not TELEGRAM_TOKEN:
@@ -86,30 +128,60 @@ async def escuchar_comandos_telegram():
             if response.ok:
                 for result in response.json().get("result", []):
                     offset = result["update_id"] + 1
-                    chat = result.get("message", {}).get("chat", {})
-                    text = result.get("message", {}).get("text", "").strip().lower()
-                    if chat:
-                        CHAT_ID = chat.get("id")
-                    if text == "/start":
-                        enviar_respuesta_directa(CHAT_ID, "👋 ¡Hola Tobias! **Tobipybot** ya está desplegado en la nube y vigilando 24/7.")
-                    elif text == "/status":
-                        enviar_respuesta_directa(CHAT_ID, f"🟢 **Estado:** NUBE ACTIVA (24/7)\n🏆 Partidos de hoy en vivo: {len(partidos_globales_activos)}")
-                    elif text == "/partidos":
-                        if not partidos_globales_activos:
-                            enviar_respuesta_directa(CHAT_ID, "⚠️ No hay partidos en juego en este momento para hoy.")
-                        else:
-                            resp = "📋 **Partidos globales en vigilancia:**\n\n"
-                            for r in partidos_globales_activos[:10]:
-                                resp += f"🏆 *{r['competition']}*\n⚽ {r['home_team']} vs {r['away_team']}\n⏱️ Minuto: {r['minute']}' | Cuota 2: `{r['odds_home']}`\n\n"
-                            enviar_respuesta_directa(CHAT_ID, resp)
+                    
+                    # Manejo de mensajes de texto normales
+                    message = result.get("message")
+                    if message:
+                        chat = message.get("chat", {})
+                        text = message.get("text", "").strip().lower()
+                        if chat:
+                            CHAT_ID = chat.get("id")
+                        if text in ["/start", "/menu"]:
+                            enviar_menu_principal(CHAT_ID)
+                        elif text == "/status":
+                            responder_accion(CHAT_ID, f"🟢 **Estado:** NUBE ACTIVA (24/7)\n🏆 Partidos vigilados hoy: {len(partidos_globales_activos)}")
+                        elif text == "/partidos":
+                            mostrar_lista_partidos(CHAT_ID)
+
+                    # Manejo de clics en los botones interactivos (Inline Buttons)
+                    callback_query = result.get("callback_query")
+                    if callback_query:
+                        chat = callback_query.get("message", {}).get("chat", {})
+                        if chat:
+                            CHAT_ID = chat.get("id")
+                        data = callback_query.get("data")
+                        query_id = callback_query.get("id")
+                        
+                        # Responder al toque para quitar el reloj de carga en Telegram
+                        requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/answerCallbackQuery", json={"callback_query_id": query_id})
+                        
+                        if data == "ver_partidos":
+                            mostrar_lista_partidos(CHAT_ID)
+                        elif data == "ver_status":
+                            responder_accion(CHAT_ID, f"🟢 **Estado:** NUBE ACTIVA (24/7)\n🏆 Partidos vigilados hoy: {len(partidos_globales_activos)}")
+                        elif data == "actualizar":
+                            escanear_todas_las_ligas_en_vivo()
+                            responder_accion(CHAT_ID, f"🔄 ¡Datos actualizados con éxito!\n🏆 Partidos activos encontrados: {len(partidos_globales_activos)}")
+
         except Exception:
             pass
         await asyncio.sleep(2)
 
-def enviar_respuesta_directa(chat_id, texto):
-    if not chat_id or not TELEGRAM_TOKEN:
+def mostrar_lista_partidos(chat_id):
+    if not partidos_globales_activos:
+        responder_accion(chat_id, "⚠️ No hay partidos en juego en este momento para hoy.")
         return
-    requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", json={"chat_id": chat_id, "text": texto, "parse_mode": "Markdown"})
+    resp = "📋 **Partidos globales en vigilancia:**\n\n"
+    for r in partidos_globales_activos[:10]:
+        resp += f"🏆 *{r['competition']}*\n⚽ {r['home_team']} vs {r['away_team']}\n⏱️ Minuto: {r['minute']}' | Cuota: `{r['odds_home']}`\n\n"
+    
+    # Botón para refrescar la lista directamente
+    teclado = {
+        "inline_keyboard": [
+            [{"text": "🔄 Refrescar Lista", "callback_data": "ver_partidos"}]
+        ]
+    }
+    responder_accion(chat_id, resp, teclado_extra=teclado)
 
 def evaluar_y_notificar():
     for match in partidos_globales_activos:
@@ -137,4 +209,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-                      
+            
