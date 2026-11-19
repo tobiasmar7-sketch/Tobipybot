@@ -526,5 +526,61 @@ async def escuchar_comandos_telegram():
                                         estado["chat_id"],
                                         f"📤 <b>Pick #{ap['id']}</b>: {partido_esc} @ <code>{ap.get('cuota', 1.95):.2f}</code> | Stake: <code>1U</code>",
                                     )
-                        elif data.s:
+                                                elif data.startswith(("win_", "loss_", "void_")):
+                            tipo, id_str = data.split("_", 1)
+                            if id_str.isdigit():
+                                apuesta_id = int(id_str)
+                                for ap in estado["historial_apuestas"]:
+                                    if ap["id"] == apuesta_id:
+                                        if tipo == "win":
+                                            ap["estado"] = "GANADA"
+                                        elif tipo == "loss":
+                                            ap["estado"] = "PERDIDA"
+                                        elif tipo == "void":
+                                            ap["estado"] = "NULA"
+                                        guardar_estado()
+                                        responder_accion(
+                                            estado["chat_id"],
+                                            f"📌 <b>Pick #{apuesta_id}</b> actualizado a: <b>{ap['estado']}</b>",
+                                        )
+                                        break
+        except Exception as e:
+            log_diag(f"Error en bucle de Telegram: {e}")
+            await asyncio.sleep(5)
+
+
+async def bucle_principal_analisis():
+    while True:
+        try:
+            escanear_mercados_avanzados()
+            evaluar_y_notificar_avanzado()
+        except Exception as e:
+            log_diag(f"Error en bucle de análisis: {e}")
+        await asyncio.sleep(180)
+
+
+def main():
+    cargar_estado()
+    log_diag("Iniciando servidor web Flask en hilo separado...")
+    t = Thread(target=run_flask, daemon=True)
+    t.start()
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    async def iniciar_todo():
+        await asyncio.gather(
+            escuchar_comandos_telegram(),
+            bucle_principal_analisis(),
+        )
+
+    try:
+        loop.run_until_complete(iniciar_todo())
+    except KeyboardInterrupt:
+        log_diag("Bot detenido manualmente.")
+
+
+if __name__ == "__main__":
+    main()
+                                                 
       
