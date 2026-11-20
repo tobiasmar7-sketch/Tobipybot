@@ -569,18 +569,21 @@ def main():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-    async def iniciar_todo():
+    def iniciar_todo():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    async def main():
         await asyncio.gather(
             escuchar_comandos_telegram(),
-            bucle_principal_analisis(),
+            bucle_principal_analisis()
         )
-
+    
     try:
-        loop.run_until_complete(iniciar_todo())
+        loop.run_until_complete(main())
     except KeyboardInterrupt:
-        log_diag("Bot detenido manualmente.")
-
+        log_diag("Bot detenido manualmente por el usuario.")
 
 if __name__ == "__main__":
-    main()
+    iniciar_todo()
     
