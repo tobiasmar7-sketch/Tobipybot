@@ -444,8 +444,10 @@ def evaluar_y_notificar_avanzado():
     log_diag(f"Evaluación completada. Nuevas alertas en este ciclo: {nuevas_alertas}")
     
 def _poll_updates(offset: int):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates?offset={offset}&timeout=35"
-    return SESSION.get(url, timeout=35)
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates?offset={offset}&timeout=50"
+    return SESSION.get(url, timeout=55)
+    
+
 
 async def escuchar_comandos_telegram():
     if not TELEGRAM_TOKEN:
