@@ -442,11 +442,33 @@ def evaluar_y_notificar_avanzado():
                 nuevas_alertas += 1
 
     log_diag(f"Evaluación completada. Nuevas alertas en este ciclo: {nuevas_alertas}")
-
-async def escuchar_comandos_telegram():
-    def _poll_updates(offset: int):
+    
+def _poll_updates(offset: int):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates?offset={offset}&timeout=35"
     return SESSION.get(url, timeout=35)
+
+async def escuchar_comandos_telegram():
+    if not TELEGRAM_TOKEN:
+        log_diag("TELEGRAM_TOKEN no configurado; polling desactivado.")
+        return
+    offset = 0
+    while True:
+        try:
+            response = await asyncio.to_thread(_poll_updates, offset)
+            if response and response.ok:
+                for result in response.json().get("result", []):
+                    offset = result["update_id"] + 1
+
+                    message = result.get("message")
+                    if message:
+                        chat = message.get("chat", {})
+                        text = (message.get("text") or "").strip().lower()
+                        if chat.get("id"):
+                            estado["chat_id"] = chat["id"]
+        except Exception as e:
+            log_diag(f"Error en polling de Telegram: {e}")
+            await asyncio.sleep(5)
+            
     
     if not TELEGRAM_TOKEN:
         log_diag("TELEGRAM_TOKEN no configurado; polling desactivado.")
