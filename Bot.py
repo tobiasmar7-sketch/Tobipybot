@@ -492,8 +492,8 @@ async def bucle_principal_analisis():
             evaluar_y_notificar_avanzado()
         except Exception as e:
             log_diag(f"Error en bucle de análisis: {e}")
-        await asyncio.sleep(180)
-
+        await asyncio.sleep(45)  # Escanea cada 45 segundos para mayor velocidad
+        
 
 def iniciar_todo():
     cargar_estado()
