@@ -560,27 +560,23 @@ async def bucle_principal_analisis():
         await asyncio.sleep(180)
 
 
-def main():
+def iniciar_todo():
     cargar_estado()
     log_diag("Iniciando servidor web Flask en hilo separado...")
     t = Thread(target=run_flask, daemon=True)
     t.start()
-
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-    def iniciar_todo():
+    
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     
-    async def main():
+    async def main_tasks():
         await asyncio.gather(
             escuchar_comandos_telegram(),
             bucle_principal_analisis()
         )
     
     try:
-        loop.run_until_complete(main())
+        loop.run_until_complete(main_tasks())
     except KeyboardInterrupt:
         log_diag("Bot detenido manualmente por el usuario.")
 
