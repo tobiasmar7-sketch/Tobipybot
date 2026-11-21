@@ -366,6 +366,7 @@ def mostrar_lista_partidos(chat_id):
 
 
 partidos_alertados_hoy = set()
+
 def evaluar_y_notificar_avanzado():
     global partidos_globales_activos, partidos_alertados_hoy
     
@@ -385,46 +386,48 @@ def evaluar_y_notificar_avanzado():
         total_goles = home_goals + away_goals
         minuto = p.get("minute", 0)
         
-        # Evaluamos solo partidos en juego con minutos válidos
-        if status in ["IN_PLAY", "LIVE", "1H", "2H"]:
+        # Evaluamos partidos en juego
+        if status in ["IN_PLAY", "LIVE", "1H", "2H", "PAUSED"]:
             
-            # --- MERCADO 1: BTTS ANTICIPADO (Buscando cuota >= 2.0 en directo con 0-0 o 1 gol) ---
-            # Ideal para cuando el partido está abierto pero aún no se completa el ambos marcan
-            cuota_btts = p.get("odds_btts", 2.05) # Simulado o recuperado de la API
-            condicion_minuto_btts = (15 <= minuto <= 70)  # Rango clave en vivo
-            condicion_marcador_btts = (total_goles <= 1)  # 0-0 o 1-0, antes de que ambos anoten
+            # IMPRESIÓN DE DIAGNÓSTICO EN LOGS: Para ver qué minutos está leyendo exactamente la API
+            log_diag(f"Analizando en vivo: {home_team} vs {away_team} | Minuto API: {minuto} | Marcador: {home_goals}-{away_goals}")
+
+            # Condición relajada: si la API no manda el minuto (devuelve 0) o está en rango lógico (0 a 85), evaluamos
+            condicion_minuto_flexible = (minuto == 0 or 1 <= minuto <= 85)
+            condicion_marcador_btts = (total_goles <= 1)  # 0-0 o 1-0, antes de completarse el ambos marcan
             
-            if condicion_minuto_btts and condicion_marcador_btts and f"{fixture_id}_btts_ant" not in partidos_alertados_hoy:
+            # --- MERCADO 1: BTTS ANTICIPADO ---
+            if condicion_minuto_flexible and condicion_marcador_btts and f"{fixture_id}_btts_ant" not in partidos_alertados_hoy:
                 texto_alerta = (
                     f"🚨 <b>¡OPORTUNIDAD BTTS PREVIA!</b> 🔔\n\n"
                     f"🏆 <b>{competition}</b>\n"
-                    f"⚽ <b>{home_team}</b> vs <b>{visitante_esc := away_team}</b>\n"
-                    f"⏱️ <b>Minuto:</b> <code>{minuto}'</code> | Marcador: <code>{home_goals}-{away_goals}</code>\n"
+                    f"⚽ <b>{home_team}</b> vs <b>{away_team}</b>\n"
+                    f"⏱️ <b>Minuto:</b> <code>{minuto if minuto > 0 else 'En juego'}</code> | Marcador: <code>{home_goals}-{away_goals}</code>\n"
                     f"📈 <b>Cuota objetivo:</b> <code>>= 2.00</code>\n\n"
-                    f"💡 <i>Análisis:</i> Partido con ritmo para buscar el Ambos Marcan antes de que se mueva el marcador."
+                    f"💡 <i>Análisis:</i> Partido activo detectado para buscar el Ambos Marcan con anticipación."
                 )
                 enviar_alerta_telegram_con_share(texto_alerta, f"{home_team} vs {away_team} (BTTS Previo)", f"{fixture_id}_btts_ant", cuota=2.00)
                 partidos_alertados_hoy.add(f"{fixture_id}_btts_ant")
                 nuevas_alertas += 1
 
-            # --- MERCADO 2: OVER 1.5 O 2.5 ANTICIPADO (Con 0-0 o 1 gol en el primer/segundo tiempo) ---
-            condicion_minuto_over = (20 <= minuto <= 65)
-            condicion_marcador_over = (total_goles < 2) # Buscando el over cuando todavía hay margen
+            # --- MERCADO 2: OVER GOLES ANTICIPADO ---
+            condicion_marcador_over = (total_goles < 2) # Buscando el over antes de que se llene de goles
             
-            if condicion_minuto_over and condicion_marcador_over and f"{fixture_id}_ov_ant" not in partidos_alertados_hoy:
+            if condicion_minuto_flexible and condicion_marcador_over and f"{fixture_id}_ov_ant" not in partidos_alertados_hoy:
                 texto_alerta = (
                     f"🚨 <b>¡OPORTUNIDAD OVER GOLES (Cuota alta)!</b> 🔔\n\n"
                     f"🏆 <b>{competition}</b>\n"
                     f"⚽ <b>{home_team}</b> vs <b>{away_team}</b>\n"
-                    f"⏱️ <b>Minuto:</b> <code>{minuto}'</code> | Marcador: <code>{home_goals}-{away_goals}</code>\n"
+                    f"⏱️ <b>Minuto:</b> <code>{minuto if minuto > 0 else 'En juego'}</code> | Marcador: <code>{home_goals}-{away_goals}</code>\n"
                     f"📈 <b>Cuota objetivo:</b> <code>>= 2.00</code>\n\n"
-                    f"💡 <i>Análisis:</i> Presión alta detectada. Margen ideal para entrar al Over antes del siguiente tanto."
+                    f"💡 <i>Análisis:</i> Margen ideal para buscar el siguiente tanto con cuota de valor."
                 )
                 enviar_alerta_telegram_con_share(texto_alerta, f"{home_team} vs {away_team} (Over Previo)", f"{fixture_id}_ov_ant", cuota=2.05)
                 partidos_alertados_hoy.add(f"{fixture_id}_ov_ant")
                 nuevas_alertas += 1
 
     log_diag(f"Evaluación completada. Nuevas alertas previas en este ciclo: {nuevas_alertas}")
+        
     
 
 
