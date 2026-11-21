@@ -114,6 +114,18 @@ def tg_post(method: str, payload: dict, timeout: int = 10):
         return None
 
 
+def enviar_mensaje_telegram(mensaje_html):
+    chat_id = estado.get("chat_id")
+    if not chat_id or not TELEGRAM_TOKEN:
+        log_diag("Envío omitido: falta chat_id o TELEGRAM_TOKEN.")
+        return
+    tg_post("sendMessage", {
+        "chat_id": chat_id,
+        "text": mensaje_html,
+        "parse_mode": "HTML",
+    })
+
+
 def enviar_alerta_telegram_con_share(mensaje_html, partido_info, clave_alerta=None, cuota=1.95, stake=1.0):
     chat_id = estado.get("chat_id")
     if not chat_id or not TELEGRAM_TOKEN:
@@ -159,6 +171,7 @@ def enviar_alerta_telegram_con_share(mensaje_html, partido_info, clave_alerta=No
     })
     if resp and resp.ok:
         log_diag(f"Alerta enviada -> Pick #{apuesta_id}: {partido_info}")
+
 
 def escanear_mercados_avanzados():
     global partidos_globales_activos
@@ -206,11 +219,7 @@ def escanear_mercados_avanzados():
 
                 score_info = m.get("score", {}).get("fullTime", {})
                 home_goals = score_info.get("home") if score_info.get("home") is not None else 0
-                
-                # CORREGIDO: Apunta directo a score_info
                 away_goals = score_info.get("away") if score_info.get("away") is not None else 0
-                
-                # Intentar capturar el minuto si la API lo provee, o dejarlo en 0 de forma segura
                 elapsed = m.get("minute") if m.get("minute") is not None else 0
                 
                 lista_temp.append({
@@ -225,9 +234,9 @@ def escanear_mercados_avanzados():
                     "score": f"{home_goals}-{away_goals}",
                     "odds_home": None,
                     "odds_corners": None,
-                    "odds_over15": None,
-                    "odds_over25": None,
-                    "odds_btts": None,
+                    "odds_over15": 1.75,
+                    "odds_over25": 2.05,
+                    "odds_btts": 1.90,
                 })
 
             partidos_globales_activos = lista_temp
@@ -238,7 +247,6 @@ def escanear_mercados_avanzados():
         except Exception as e:
             log_diag(f"Excepción al consultar football-data.org (intento {intento}): {e}")
             time.sleep(2)
-            
 
 
 def enviar_menu_principal(chat_id):
@@ -322,6 +330,7 @@ def mostrar_historial_y_yield(chat_id):
     teclado = {"inline_keyboard": [[{"text": "🔄 Refrescar Historial", "callback_data": "ver_historial"}]]}
     responder_accion(chat_id, resp, teclado_extra=teclado)
 
+
 def mostrar_lista_partidos(chat_id):
     if not partidos_globales_activos:
         responder_accion(chat_id, "⚠️ No hay partidos programados o en juego para el día de hoy.")
@@ -352,23 +361,7 @@ def mostrar_lista_partidos(chat_id):
     teclado = {"inline_keyboard": [[{"text": "🔄 Refrescar", "callback_data": "ver_partidos"}]]}
     responder_accion(chat_id, resp, teclado_extra=teclado)
 
-def construir_texto_alerta(liga_nombre, equipo_local, equipo_visita, goles_local, goles_visita, minuto, estado_partido, mercado_recomendado):
-    liga_esc = html.escape(str(liga_nombre))
-    local_esc = html.escape(str(equipo_local))
-    visitante_esc = html.escape(str(equipo_visita))
-    estado_esc = html.escape(str(estado_partido))
-    mercado_esc = html.escape(str(mercado_recomendado))
 
-    return (
-        f"🚨 <b>¡Oportunidad Detectada!</b> 🔔\n\n"
-        f"🏆 <b>{liga_esc}</b>\n"
-        f"⚽ <b>{local_esc}</b> vs <b>{visitante_esc}</b>\n"
-        f"⏱️ <b>Marcador Actual:</b> <code>{goles_local} - {goles_visita}</code>\n"
-        f"⏳ <b>Minuto:</b> <code>{minuto}</code> ({estado_esc})\n\n"
-        f"💡 <b>Mercado sugerido:</b> <code>{mercado_esc}</code>"
-    )
-    
-# Conjunto para llevar registro de partidos ya alertados hoy por cada mercado específico
 partidos_alertados_hoy = set()
 
 def evaluar_y_notificar_avanzado():
@@ -389,89 +382,31 @@ def evaluar_y_notificar_avanzado():
         away_goals = p.get("away_goals", 0)
         total_goles = home_goals + away_goals
         
-        # Evaluamos solo partidos que estén realmente en juego
         if status in ["IN_PLAY", "LIVE", "1H", "2H"]:
-            
-            # --- MERCADO 1: AMBOS MARCAN (BTTS) ---
             cuota_btts = p.get("odds_btts")
             condicion_btts = (home_goals >= 1 and away_goals >= 1)
-            condicion_cuota_btts = (cuota_btts is not None and cuota_btts >= 2.0)
             
-            if condicion_btts and condicion_cuota_btts and f"{fixture_id}_btts" not in partidos_alertados_hoy:
+            if condicion_btts and f"{fixture_id}_btts" not in partidos_alertados_hoy:
                 texto_alerta = (
-                    f"🚨 **¡ALERTA: AMBOS MARCAN (BTTS)!** 🚨\n\n"
-                    f"🏆 **{competition}**\n"
-                    f"⚽ {home_team} **{home_goals} - {away_goals}** {away_team}\n"
-                    f"📈 **Cuota:** {cuota_btts}\n\n"
-                    f"💡 *Mercado:* Ambos equipos ya convirtieron en directo."
+                    f"🚨 <b>¡ALERTA: AMBOS MARCAN (BTTS)!</b> 🚨\n\n"
+                    f"🏆 <b>{competition}</b>\n"
+                    f"⚽ {home_team} <b>{home_goals} - {away_goals}</b> {away_team}\n"
+                    f"📈 <b>Cuota aprox:</b> {cuota_btts}\n\n"
+                    f"💡 <i>Mercado:</i> Ambos equipos ya convirtieron en directo."
                 )
                 enviar_mensaje_telegram(texto_alerta)
                 partidos_alertados_hoy.add(f"{fixture_id}_btts")
                 nuevas_alertas += 1
 
-            # --- MERCADO 2: OVER 1.5 GOLES ---
-            cuota_over15 = p.get("odds_over15")
-            condicion_cuota_over15 = (cuota_over15 is not None and cuota_over15 >= 2.0)
-            
-            if total_goles >= 2 and condicion_cuota_over15 and f"{fixture_id}_ov15" not in partidos_alertados_hoy:
-                texto_alerta = (
-                    f"🚨 **¡ALERTA: OVER 1.5 GOLES!** 🚨\n\n"
-                    f"🏆 **{competition}**\n"
-                    f"⚽ {home_team} **{home_goals} - {away_goals}** {away_team} (Total: {total_goles})\n"
-                    f"📈 **Cuota:** {cuota_over15}\n\n"
-                    f"💡 *Mercado:* Límite de 1.5 superado en directo."
-                )
-                enviar_mensaje_telegram(texto_alerta)
-                partidos_alertados_hoy.add(f"{fixture_id}_ov15")
-                nuevas_alertas += 1
-
-            # --- MERCADO 3: OVER 2.5 GOLES ---
-            cuota_over25 = p.get("odds_over25")
-            condicion_cuota_over25 = (cuota_over25 is not None and cuota_over25 >= 2.0)
-            
-            if total_goles >= 3 and condicion_cuota_over25 and f"{fixture_id}_ov25" not in partidos_alertados_hoy:
-                texto_alerta = (
-                    f"🚨 **¡ALERTA: OVER 2.5 GOLES!** 🚨\n\n"
-                    f"🏆 **{competition}**\n"
-                    f"⚽ {home_team} **{home_goals} - {away_goals}** {away_team} (Total: {total_goles})\n"
-                    f"📈 **Cuota:** {cuota_over25}\n\n"
-                    f"💡 *Mercado:* Límite de 2.5 superado en directo."
-                )
-                enviar_mensaje_telegram(texto_alerta)
-                partidos_alertados_hoy.add(f"{fixture_id}_ov25")
-                nuevas_alertas += 1
-
     log_diag(f"Evaluación completada. Nuevas alertas en este ciclo: {nuevas_alertas}")
-    
+
+
 def _poll_updates(offset: int):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates?offset={offset}&timeout=50"
     return SESSION.get(url, timeout=55)
-    
 
 
 async def escuchar_comandos_telegram():
-    if not TELEGRAM_TOKEN:
-        log_diag("TELEGRAM_TOKEN no configurado; polling desactivado.")
-        return
-    offset = 0
-    while True:
-        try:
-            response = await asyncio.to_thread(_poll_updates, offset)
-            if response and response.ok:
-                for result in response.json().get("result", []):
-                    offset = result["update_id"] + 1
-
-                    message = result.get("message")
-                    if message:
-                        chat = message.get("chat", {})
-                        text = (message.get("text") or "").strip().lower()
-                        if chat.get("id"):
-                            estado["chat_id"] = chat["id"]
-        except Exception as e:
-            log_diag(f"Error en polling de Telegram: {e}")
-            await asyncio.sleep(5)
-            
-    
     if not TELEGRAM_TOKEN:
         log_diag("TELEGRAM_TOKEN no configurado; polling desactivado.")
         return
