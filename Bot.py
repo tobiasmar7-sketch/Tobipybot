@@ -386,23 +386,19 @@ def evaluar_y_notificar_avanzado():
         total_goles = home_goals + away_goals
         minuto = p.get("minute", 0)
         
-        # Evaluamos partidos en juego
+        # Evaluamos partidos que estén activos en vivo
         if status in ["IN_PLAY", "LIVE", "1H", "2H", "PAUSED"]:
             
-            # IMPRESIÓN DE DIAGNÓSTICO EN LOGS: Para ver qué minutos está leyendo exactamente la API
-            log_diag(f"Analizando en vivo: {home_team} vs {away_team} | Minuto API: {minuto} | Marcador: {home_goals}-{away_goals}")
-
-            # Condición relajada: si la API no manda el minuto (devuelve 0) o está en rango lógico (0 a 85), evaluamos
-            condicion_minuto_flexible = (minuto == 0 or 1 <= minuto <= 85)
+            # Si el estado es activo, permitimos la evaluación directa (ignorando si la API manda 0 en el minuto)
             condicion_marcador_btts = (total_goles <= 1)  # 0-0 o 1-0, antes de completarse el ambos marcan
             
             # --- MERCADO 1: BTTS ANTICIPADO ---
-            if condicion_minuto_flexible and condicion_marcador_btts and f"{fixture_id}_btts_ant" not in partidos_alertados_hoy:
+            if condicion_marcador_btts and f"{fixture_id}_btts_ant" not in partidos_alertados_hoy:
                 texto_alerta = (
                     f"🚨 <b>¡OPORTUNIDAD BTTS PREVIA!</b> 🔔\n\n"
                     f"🏆 <b>{competition}</b>\n"
                     f"⚽ <b>{home_team}</b> vs <b>{away_team}</b>\n"
-                    f"⏱️ <b>Minuto:</b> <code>{minuto if minuto > 0 else 'En juego'}</code> | Marcador: <code>{home_goals}-{away_goals}</code>\n"
+                    f"⏱️ <b>Estado:</b> <code>En juego ({status})</code> | Marcador: <code>{home_goals}-{away_goals}</code>\n"
                     f"📈 <b>Cuota objetivo:</b> <code>>= 2.00</code>\n\n"
                     f"💡 <i>Análisis:</i> Partido activo detectado para buscar el Ambos Marcan con anticipación."
                 )
@@ -413,12 +409,12 @@ def evaluar_y_notificar_avanzado():
             # --- MERCADO 2: OVER GOLES ANTICIPADO ---
             condicion_marcador_over = (total_goles < 2) # Buscando el over antes de que se llene de goles
             
-            if condicion_minuto_flexible and condicion_marcador_over and f"{fixture_id}_ov_ant" not in partidos_alertados_hoy:
+            if condicion_marcador_over and f"{fixture_id}_ov_ant" not in partidos_alertados_hoy:
                 texto_alerta = (
                     f"🚨 <b>¡OPORTUNIDAD OVER GOLES (Cuota alta)!</b> 🔔\n\n"
                     f"🏆 <b>{competition}</b>\n"
                     f"⚽ <b>{home_team}</b> vs <b>{away_team}</b>\n"
-                    f"⏱️ <b>Minuto:</b> <code>{minuto if minuto > 0 else 'En juego'}</code> | Marcador: <code>{home_goals}-{away_goals}</code>\n"
+                    f"⏱️ <b>Estado:</b> <code>En juego ({status})</code> | Marcador: <code>{home_goals}-{away_goals}</code>\n"
                     f"📈 <b>Cuota objetivo:</b> <code>>= 2.00</code>\n\n"
                     f"💡 <i>Análisis:</i> Margen ideal para buscar el siguiente tanto con cuota de valor."
                 )
@@ -427,7 +423,7 @@ def evaluar_y_notificar_avanzado():
                 nuevas_alertas += 1
 
     log_diag(f"Evaluación completada. Nuevas alertas previas en este ciclo: {nuevas_alertas}")
-        
+    
     
 
 
