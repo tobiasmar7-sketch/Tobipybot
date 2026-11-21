@@ -172,8 +172,7 @@ def enviar_alerta_telegram_con_share(mensaje_html, partido_info, clave_alerta=No
     if resp and resp.ok:
         log_diag(f"Alerta enviada -> Pick #{apuesta_id}: {partido_info}")
 
-
-                def escanear_mercados_avanzados():
+def escanear_mercados_avanzados():
     global partidos_globales_activos
     if not API_KEY:
         log_diag("Sin API Key configurada para football-data.org.")
@@ -183,7 +182,6 @@ def enviar_alerta_telegram_con_share(mensaje_html, partido_info, clave_alerta=No
 
     for intento in range(1, 4):
         try:
-            # Subimos el timeout a 20 segundos para evitar cortes repentinos por tráfico
             response = SESSION.get(url, headers=HEADERS, timeout=20)
             status_code = response.status_code
 
@@ -240,7 +238,6 @@ def enviar_alerta_telegram_con_share(mensaje_html, partido_info, clave_alerta=No
                     "odds_btts": 1.90,
                 })
 
-            # Solo actualizamos si la lista nueva trajo elementos; si por algún motivo viene vacía temporalmente pero hubo éxito, preservamos o asignamos
             if lista_temp:
                 partidos_globales_activos = lista_temp
             
@@ -251,6 +248,8 @@ def enviar_alerta_telegram_con_share(mensaje_html, partido_info, clave_alerta=No
         except Exception as e:
             log_diag(f"Excepción al consultar football-data.org (intento {intento}): {e}")
             time.sleep(3)
+            
+                
             
 
 def enviar_menu_principal(chat_id):
