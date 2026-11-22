@@ -367,6 +367,9 @@ def mostrar_lista_partidos(chat_id):
 
 partidos_alertados_hoy = set()
 
+
+from datetime import datetime, timezone
+
 def evaluar_y_notificar_avanzado():
     global partidos_globales_activos, partidos_alertados_hoy
     
@@ -374,6 +377,7 @@ def evaluar_y_notificar_avanzado():
         return
 
     nuevas_alertas = 0
+    ahora_utc = datetime.now(timezone.utc)
 
     for p in partidos_globales_activos:
         fixture_id = p.get("fixture_id")
@@ -384,13 +388,39 @@ def evaluar_y_notificar_avanzado():
         home_goals = p.get("home_goals", 0)
         away_goals = p.get("away_goals", 0)
         total_goles = home_goals + away_goals
-        minuto = p.get("minute", 0)
         
-        # Evaluamos partidos que estén activos en vivo
+        # Evaluamos partidos activos en vivo
         if status in ["IN_PLAY", "LIVE", "1H", "2H", "PAUSED"]:
             
-            # Si el estado es activo, permitimos la evaluación directa (ignorando si la API manda 0 en el minuto)
-            condicion_marcador_btts = (total_goles <= 1)  # 0-0 o 1-0, antes de completarse el ambos marcan
+            # CÁLCULO INTELIGENTE DE TIEMPO REAL:
+            # Como la API no avanza el minuto, calculamos los minutos transcurridos 
+            # desde la hora de inicio del partido (utcDate) guardada en el fixture.
+            minuto_calculado = 0
+            utc_str = p.get("utc_date", "")
+            if utc_str:
+                try:
+                    # Limpiamos el formato de fecha de la API ('2026-11-21T18:00:00Z')
+                    utc_limpio = utc_str.replace("Z", "+00:00")
+                    inicio_dt = datetime.fromisoformat(utc_limpio)
+                    dif_minutos = int((ahora_utc - inicio_dt).total_seconds() / 60)
+                    if dif_minutos >= 0:
+                        minuto_calculado = dif_minutos
+                except Exception:
+                    pass
+            
+            # Si la API por milagro nos da un minuto válido > 0, lo usamos; si no, usamos el cálculo real por hora.
+            minuto_final = p.get("minute", 0)
+            if minuto_final <= 0 and minuto_calculado > 0:
+                minuto_final = minuto_calculado
+
+            # FILTRO DE ORO: Evitamos el arranque absoluto (minuto 0 al 15) para no generar spam, 
+            # y filtramos la franja ideal de cuotas (hasta el minuto 75). Si no tenemos hora exacta, 
+            # dejamos pasar si el estado es de juego activo.
+            if minuto_final > 0 and not (12 <= minuto_final <= 75):
+                continue
+
+            # Marcador estricto para buscar la cuota 2.00 previa al desenlace (0-0 o 1-0)
+            condicion_marcador_btts = (total_goles <= 1)
             
             # --- MERCADO 1: BTTS ANTICIPADO ---
             if condicion_marcador_btts and f"{fixture_id}_btts_ant" not in partidos_alertados_hoy:
@@ -398,32 +428,32 @@ def evaluar_y_notificar_avanzado():
                     f"🚨 <b>¡OPORTUNIDAD BTTS PREVIA!</b> 🔔\n\n"
                     f"🏆 <b>{competition}</b>\n"
                     f"⚽ <b>{home_team}</b> vs <b>{away_team}</b>\n"
-                    f"⏱️ <b>Estado:</b> <code>En juego ({status})</code> | Marcador: <code>{home_goals}-{away_goals}</code>\n"
+                    f"⏱️ <b>Minuto Aprox:</b> <code>{minuto_final if minuto_final > 0 else 'En juego'}</code> | Marcador: <code>{home_goals}-{away_goals}</code>\n"
                     f"📈 <b>Cuota objetivo:</b> <code>>= 2.00</code>\n\n"
-                    f"💡 <i>Análisis:</i> Partido activo detectado para buscar el Ambos Marcan con anticipación."
+                    f"💡 <i>Análisis:</i> Partido maduro detectado con margen ideal para buscar el Ambos Marcan."
                 )
                 enviar_alerta_telegram_con_share(texto_alerta, f"{home_team} vs {away_team} (BTTS Previo)", f"{fixture_id}_btts_ant", cuota=2.00)
                 partidos_alertados_hoy.add(f"{fixture_id}_btts_ant")
                 nuevas_alertas += 1
 
             # --- MERCADO 2: OVER GOLES ANTICIPADO ---
-            condicion_marcador_over = (total_goles < 2) # Buscando el over antes de que se llene de goles
+            condicion_marcador_over = (total_goles < 2) # 0-0 o 1-0
             
             if condicion_marcador_over and f"{fixture_id}_ov_ant" not in partidos_alertados_hoy:
                 texto_alerta = (
                     f"🚨 <b>¡OPORTUNIDAD OVER GOLES (Cuota alta)!</b> 🔔\n\n"
                     f"🏆 <b>{competition}</b>\n"
                     f"⚽ <b>{home_team}</b> vs <b>{away_team}</b>\n"
-                    f"⏱️ <b>Estado:</b> <code>En juego ({status})</code> | Marcador: <code>{home_goals}-{away_goals}</code>\n"
+                    f"⏱️ <b>Minuto Aprox:</b> <code>{minuto_final if minuto_final > 0 else 'En juego'}</code> | Marcador: <code>{home_goals}-{away_goals}</code>\n"
                     f"📈 <b>Cuota objetivo:</b> <code>>= 2.00</code>\n\n"
-                    f"💡 <i>Análisis:</i> Margen ideal para buscar el siguiente tanto con cuota de valor."
+                    f"💡 <i>Análisis:</i> Partido con tendencia cerrada y alta cuota para buscar el siguiente tanto."
                 )
                 enviar_alerta_telegram_con_share(texto_alerta, f"{home_team} vs {away_team} (Over Previo)", f"{fixture_id}_ov_ant", cuota=2.05)
                 partidos_alertados_hoy.add(f"{fixture_id}_ov_ant")
                 nuevas_alertas += 1
 
     log_diag(f"Evaluación completada. Nuevas alertas previas en este ciclo: {nuevas_alertas}")
-    
+            
     
 
 
