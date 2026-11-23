@@ -468,7 +468,8 @@ def evaluar_y_notificar_avanzado():
                 nuevas_alertas += 1
 
     log_diag(f"Evaluación completada. Nuevas alertas previas en este ciclo: {nuevas_alertas}")
-                def cargar_historial():
+    
+def cargar_historial():
     """Carga el historial de apuestas desde el archivo JSON local."""
     if os.path.exists(ARCHIVO_HISTORIAL):
         try:
