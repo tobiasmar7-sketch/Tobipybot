@@ -368,7 +368,7 @@ def mostrar_lista_partidos(chat_id):
 partidos_alertados_hoy = set()
 from datetime import datetime, timezone
 
-            def evaluar_y_notificar_avanzado():
+def evaluar_y_notificar_avanzado():
     global partidos_globales_activos, partidos_alertados_hoy
     
     if not partidos_globales_activos:
