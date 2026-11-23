@@ -368,11 +368,14 @@ def mostrar_lista_partidos(chat_id):
 partidos_alertados_hoy = set()
 from datetime import datetime, timezone
 
-def evaluar_y_notificar_avanzado():
+            def evaluar_y_notificar_avanzado():
     global partidos_globales_activos, partidos_alertados_hoy
     
     if not partidos_globales_activos:
         return
+
+    # 1. EJECUTAR EL CHEQUEO AUTOMÁTICO DE RESULTADOS AL INICIAR EL CICLO
+    verificar_y_actualizar_resultados_automaticos()
 
     nuevas_alertas = 0
     ahora_utc = datetime.now(timezone.utc)
@@ -387,10 +390,7 @@ def evaluar_y_notificar_avanzado():
         away_goals = p.get("away_goals", 0)
         total_goles = home_goals + away_goals
         
-        # Evaluamos únicamente partidos plenamente en juego
         if status in ["IN_PLAY", "LIVE", "1H", "2H", "PAUSED"]:
-            
-            # CÁLCULO AUTÓNOMO DEL MINUTO REAL:
             minuto_calculado = 0
             utc_str = p.get("utc_date", "")
             if utc_str:
@@ -407,13 +407,11 @@ def evaluar_y_notificar_avanzado():
             if minuto_final <= 0 and minuto_calculado > 0:
                 minuto_final = minuto_calculado
 
-            # FILTRO DE MADUREZ: Descartamos el arranque absoluto (0-15 min) y partidos ya muy avanzados (>78 min)
             if minuto_final > 0 and not (15 <= minuto_final <= 78):
                 continue
 
-            # --- 1. MERCADO BTTS PREVIO (Ambos Marcan) ---
+            # --- 1. MERCADO BTTS PREVIO ---
             condicion_btts = (total_goles == 0 and minuto_final >= 20)
-            
             if condicion_btts and f"{fixture_id}_btts_ant" not in partidos_alertados_hoy:
                 texto_alerta = (
                     f"🚨 <b>¡OPORTUNIDAD BTTS PREVIA!</b> 🔔\n\n"
@@ -424,12 +422,15 @@ def evaluar_y_notificar_avanzado():
                     f"💡 <i>Análisis:</i> Partido con posesión disputada y vallas invictas. Momento óptimo para buscar el intercambio de goles con cuota de valor."
                 )
                 enviar_alerta_telegram_con_share(texto_alerta, f"{home_team} vs {away_team} (BTTS Previo)", f"{fixture_id}_btts_ant", cuota=2.00)
+                
+                # AQUÍ SE REGISTRA AUTOMÁTICAMENTE EL PENDIENTE:
+                registrar_apuesta_pendiente(fixture_id, f"{home_team} vs {away_team}", "BTTS Previo", cuota=2.00)
+                
                 partidos_alertados_hoy.add(f"{fixture_id}_btts_ant")
                 nuevas_alertas += 1
 
             # --- 2. MERCADO OVER 1.5 GOLES ---
             condicion_over15 = (total_goles <= 1 and minuto_final >= 30)
-            
             if condicion_over15 and f"{fixture_id}_ov15_ant" not in partidos_alertados_hoy:
                 texto_alerta = (
                     f"🚨 <b>¡OPORTUNIDAD OVER 1.5 GOLES!</b> 🔔\n\n"
@@ -440,12 +441,15 @@ def evaluar_y_notificar_avanzado():
                     f"💡 <i>Análisis:</i> Presión ofensiva constante sin reflejarse aún en el marcador. Alta probabilidad de quiebre en el complemento."
                 )
                 enviar_alerta_telegram_con_share(texto_alerta, f"{home_team} vs {away_team} (Over 1.5 Previo)", f"{fixture_id}_ov15_ant", cuota=1.75)
+                
+                # AQUÍ SE REGISTRA AUTOMÁTICAMENTE EL PENDIENTE:
+                registrar_apuesta_pendiente(fixture_id, f"{home_team} vs {away_team}", "Over 1.5", cuota=1.75)
+                
                 partidos_alertados_hoy.add(f"{fixture_id}_ov15_ant")
                 nuevas_alertas += 1
 
-            # --- 3. MERCADO OVER 2.5 GOLES (Cuota Alta) ---
+            # --- 3. MERCADO OVER 2.5 GOLES ---
             condicion_over25 = (total_goles == 1 and minuto_final >= 50)
-            
             if condicion_over25 and f"{fixture_id}_ov25_ant" not in partidos_alertados_hoy:
                 texto_alerta = (
                     f"🚨 <b>¡OPORTUNIDAD OVER 2.5 GOLES (Cuota Alta)!</b> 🔔\n\n"
@@ -456,13 +460,101 @@ def evaluar_y_notificar_avanzado():
                     f"💡 <i>Análisis:</i> Encuentro abierto con espacios en defensa. Margen excelente para cazar el tercer tanto con cuotón."
                 )
                 enviar_alerta_telegram_con_share(texto_alerta, f"{home_team} vs {away_team} (Over 2.5 Previo)", f"{fixture_id}_ov25_ant", cuota=2.05)
+                
+                # AQUÍ SE REGISTRA AUTOMÁTICAMENTE EL PENDIENTE:
+                registrar_apuesta_pendiente(fixture_id, f"{home_team} vs {away_team}", "Over 2.5", cuota=2.05)
+                
                 partidos_alertados_hoy.add(f"{fixture_id}_ov25_ant")
                 nuevas_alertas += 1
 
     log_diag(f"Evaluación completada. Nuevas alertas previas en este ciclo: {nuevas_alertas}")
-                
+                def cargar_historial():
+    """Carga el historial de apuestas desde el archivo JSON local."""
+    if os.path.exists(ARCHIVO_HISTORIAL):
+        try:
+            with open(ARCHIVO_HISTORIAL, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return []
+    return []
 
-     
+def guardar_historial(historial):
+    """Guarda el historial actualizado en el archivo JSON."""
+    try:
+        with open(ARCHIVO_HISTORIAL, "w", encoding="utf-8") as f:
+            json.dump(historial, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        print(f"Error guardando historial: {e}")
+
+def registrar_apuesta_pendiente(fixture_id, partido_nombre, tipo_apuesta, cuota):
+    """Registra una nueva alerta emitida como pendiente de resultado."""
+    historial = cargar_historial()
+    
+    # Evitamos duplicar el mismo tipo de apuesta para el mismo partido
+    for ap in historial:
+        if ap.get("fixture_id") == fixture_id and ap.get("tipo_apuesta") == tipo_apuesta:
+            return
+
+    nueva_apuesta = {
+        "fixture_id": fixture_id,
+        "partido": partido_nombre,
+        "tipo_apuesta": tipo_apuesta,
+        "cuota": cuota,
+        "estado": "PENDIENTE"
+    }
+    
+    historial.append(nueva_apuesta)
+    guardar_historial(historial)
+
+def verificar_y_actualizar_resultados_automaticos():
+    """Revisa los partidos finalizados en la API y actualiza el estado a GANADA o PERDIDA."""
+    global partidos_globales_activos
+    if not partidos_globales_activos:
+        return
+
+    historial = cargar_historial()
+    cambios_realizados = False
+
+    for ap in historial:
+        if ap["estado"] == "PENDIENTE":
+            fix_id = ap["fixture_id"]
+            tipo = ap["tipo_apuesta"]
+            
+            partido_actual = next((p for p in partidos_globales_activos if p.get("fixture_id") == fix_id), None)
+            
+            if partido_actual:
+                status = partido_actual.get("status")
+                if status in ["FINISHED", "FT", "AET", "PEN"]:
+                    hg = partido_actual.get("home_goals", 0)
+                    ag = partido_actual.get("away_goals", 0)
+                    total_goles = hg + ag
+                    
+                    if "BTTS" in tipo:
+                        if hg > 0 and ag > 0:
+                            ap["estado"] = "GANADA"
+                        else:
+                            ap["estado"] = "PERDIDA"
+                        cambios_realizados = True
+                        
+                    elif "Over 1.5" in tipo:
+                        if total_goles >= 2:
+                            ap["estado"] = "GANADA"
+                        else:
+                            ap["estado"] = "PERDIDA"
+                        cambios_realizados = True
+                        
+                    elif "Over 2.5" in tipo:
+                        if total_goles >= 3:
+                            ap["estado"] = "GANADA"
+                        else:
+                            ap["estado"] = "PERDIDA"
+                        cambios_realizados = True
+
+    if cambios_realizados:
+        guardar_historial(historial)
+        
+
+    
 
 def _poll_updates(offset: int):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates?offset={offset}&timeout=50"
