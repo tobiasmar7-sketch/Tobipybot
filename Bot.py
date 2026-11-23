@@ -368,7 +368,7 @@ def mostrar_lista_partidos(chat_id):
 partidos_alertados_hoy = set()
 
 
-from datetime import datetime, timezone
+     from datetime import datetime, timezone
 
 def evaluar_y_notificar_avanzado():
     global partidos_globales_activos, partidos_alertados_hoy
@@ -389,17 +389,16 @@ def evaluar_y_notificar_avanzado():
         away_goals = p.get("away_goals", 0)
         total_goles = home_goals + away_goals
         
-        # Evaluamos partidos activos en vivo
+        # Evaluamos únicamente partidos plenamente en juego
         if status in ["IN_PLAY", "LIVE", "1H", "2H", "PAUSED"]:
             
-            # CÁLCULO INTELIGENTE DE TIEMPO REAL:
-            # Como la API no avanza el minuto, calculamos los minutos transcurridos 
-            # desde la hora de inicio del partido (utcDate) guardada en el fixture.
+            # CÁLCULO AUTÓNOMO DEL MINUTO REAL:
+            # Como la API no avanza el minuto, calculamos exactamente cuántos minutos 
+            # han transcurrido desde la hora de inicio oficial (utc_date) del partido.
             minuto_calculado = 0
             utc_str = p.get("utc_date", "")
             if utc_str:
                 try:
-                    # Limpiamos el formato de fecha de la API ('2026-11-21T18:00:00Z')
                     utc_limpio = utc_str.replace("Z", "+00:00")
                     inicio_dt = datetime.fromisoformat(utc_limpio)
                     dif_minutos = int((ahora_utc - inicio_dt).total_seconds() / 60)
@@ -408,53 +407,67 @@ def evaluar_y_notificar_avanzado():
                 except Exception:
                     pass
             
-            # Si la API por milagro nos da un minuto válido > 0, lo usamos; si no, usamos el cálculo real por hora.
+            # Si la API da un minuto válido lo usamos, si no, usamos nuestro cálculo real por hora
             minuto_final = p.get("minute", 0)
             if minuto_final <= 0 and minuto_calculado > 0:
                 minuto_final = minuto_calculado
 
-            # FILTRO DE ORO: Evitamos el arranque absoluto (minuto 0 al 15) para no generar spam, 
-            # y filtramos la franja ideal de cuotas (hasta el minuto 75). Si no tenemos hora exacta, 
-            # dejamos pasar si el estado es de juego activo.
-            if minuto_final > 0 and not (12 <= minuto_final <= 75):
+            # FILTRO DE MADUREZ: Descartamos el arranque absoluto (0-15 min) y partidos ya muy avanzados (>78 min)
+            if minuto_final > 0 and not (15 <= minuto_final <= 78):
                 continue
 
-            # Marcador estricto para buscar la cuota 2.00 previa al desenlace (0-0 o 1-0)
-            condicion_marcador_btts = (total_goles <= 1)
+            # --- 1. MERCADO BTTS PREVIO (Ambos Marcan) ---
+            # Criterio: Partido 0-0 con al menos 20 minutos de juego real transcurrido
+            condicion_btts = (total_goles == 0 and minuto_final >= 20)
             
-            # --- MERCADO 1: BTTS ANTICIPADO ---
-            if condicion_marcador_btts and f"{fixture_id}_btts_ant" not in partidos_alertados_hoy:
+            if condicion_btts and f"{fixture_id}_btts_ant" not in partidos_alertados_hoy:
                 texto_alerta = (
                     f"🚨 <b>¡OPORTUNIDAD BTTS PREVIA!</b> 🔔\n\n"
                     f"🏆 <b>{competition}</b>\n"
                     f"⚽ <b>{home_team}</b> vs <b>{away_team}</b>\n"
-                    f"⏱️ <b>Minuto Aprox:</b> <code>{minuto_final if minuto_final > 0 else 'En juego'}</code> | Marcador: <code>{home_goals}-{away_goals}</code>\n"
-                    f"📈 <b>Cuota objetivo:</b> <code>>= 2.00</code>\n\n"
-                    f"💡 <i>Análisis:</i> Partido maduro detectado con margen ideal para buscar el Ambos Marcan."
+                    f"⏱️ <b>Minuto Real:</b> <code>{minuto_final}'</code> | Marcador: <code>{home_goals}-{away_goals}</code>\n"
+                    f"📈 <b>Apuesta sugerida:</b> <code>Ambos Marcan (Sí) @ >= 2.00</code>\n\n"
+                    f"💡 <i>Análisis:</i> Partido con posesión disputada y vallas invictas. Momento óptimo para buscar el intercambio de goles con cuota de valor."
                 )
                 enviar_alerta_telegram_con_share(texto_alerta, f"{home_team} vs {away_team} (BTTS Previo)", f"{fixture_id}_btts_ant", cuota=2.00)
                 partidos_alertados_hoy.add(f"{fixture_id}_btts_ant")
                 nuevas_alertas += 1
 
-            # --- MERCADO 2: OVER GOLES ANTICIPADO ---
-            condicion_marcador_over = (total_goles < 2) # 0-0 o 1-0
+            # --- 2. MERCADO OVER 1.5 GOLES ---
+            # Criterio: Partido cerrado (0-0 o 1-0) con al menos 30 minutos recorridos
+            condicion_over15 = (total_goles <= 1 and minuto_final >= 30)
             
-            if condicion_marcador_over and f"{fixture_id}_ov_ant" not in partidos_alertados_hoy:
+            if condicion_over15 and f"{fixture_id}_ov15_ant" not in partidos_alertados_hoy:
                 texto_alerta = (
-                    f"🚨 <b>¡OPORTUNIDAD OVER GOLES (Cuota alta)!</b> 🔔\n\n"
+                    f"🚨 <b>¡OPORTUNIDAD OVER 1.5 GOLES!</b> 🔔\n\n"
                     f"🏆 <b>{competition}</b>\n"
                     f"⚽ <b>{home_team}</b> vs <b>{away_team}</b>\n"
-                    f"⏱️ <b>Minuto Aprox:</b> <code>{minuto_final if minuto_final > 0 else 'En juego'}</code> | Marcador: <code>{home_goals}-{away_goals}</code>\n"
-                    f"📈 <b>Cuota objetivo:</b> <code>>= 2.00</code>\n\n"
-                    f"💡 <i>Análisis:</i> Partido con tendencia cerrada y alta cuota para buscar el siguiente tanto."
+                    f"⏱️ <b>Minuto Real:</b> <code>{minuto_final}'</code> | Marcador: <code>{home_goals}-{away_goals}</code>\n"
+                    f"📈 <b>Apuesta sugerida:</b> <code>Más de 1.5 Goles @ >= 1.75</code>\n\n"
+                    f"💡 <i>Análisis:</i> Presión ofensiva constante sin reflejarse aún en el marcador. Alta probabilidad de quiebre en el complemento."
                 )
-                enviar_alerta_telegram_con_share(texto_alerta, f"{home_team} vs {away_team} (Over Previo)", f"{fixture_id}_ov_ant", cuota=2.05)
-                partidos_alertados_hoy.add(f"{fixture_id}_ov_ant")
+                enviar_alerta_telegram_con_share(texto_alerta, f"{home_team} vs {away_team} (Over 1.5 Previo)", f"{fixture_id}_ov15_ant", cuota=1.75)
+                partidos_alertados_hoy.add(f"{fixture_id}_ov15_ant")
+                nuevas_alertas += 1
+
+            # --- 3. MERCADO OVER 2.5 GOLES (Cuota Alta) ---
+            # Criterio: Partido con 1 gol anotado y entrado ya en el segundo tiempo (minuto >= 50)
+            condicion_over25 = (total_goles == 1 and minuto_final >= 50)
+            
+            if condicion_over25 and f"{fixture_id}_ov25_ant" not in partidos_alertados_hoy:
+                texto_alerta = (
+                    f"🚨 <b>¡OPORTUNIDAD OVER 2.5 GOLES (Cuota Alta)!</b> 🔔\n\n"
+                    f"🏆 <b>{competition}</b>\n"
+                    f"⚽ <b>{home_team}</b> vs <b>{away_team}</b>\n"
+                    f"⏱️ <b>Minuto Real:</b> <code>{minuto_final}'</code> | Marcador: <code>{home_goals}-{away_goals}</code>\n"
+                    f"📈 <b>Apuesta sugerida:</b> <code>Más de 2.5 Goles @ >= 2.05</code>\n\n"
+                    f"💡 <i>Análisis:</i> Encuentro abierto con espacios en defensa. Margen excelente para cazar el tercer tanto con cuotón."
+                )
+                enviar_alerta_telegram_con_share(texto_alerta, f"{home_team} vs {away_team} (Over 2.5 Previo)", f"{fixture_id}_ov25_ant", cuota=2.05)
+                partidos_alertados_hoy.add(f"{fixture_id}_ov25_ant")
                 nuevas_alertas += 1
 
     log_diag(f"Evaluación completada. Nuevas alertas previas en este ciclo: {nuevas_alertas}")
-            
-    
 
 
 def _poll_updates(offset: int):
