@@ -366,9 +366,7 @@ def mostrar_lista_partidos(chat_id):
 
 
 partidos_alertados_hoy = set()
-
-
-     from datetime import datetime, timezone
+from datetime import datetime, timezone
 
 def evaluar_y_notificar_avanzado():
     global partidos_globales_activos, partidos_alertados_hoy
@@ -393,8 +391,6 @@ def evaluar_y_notificar_avanzado():
         if status in ["IN_PLAY", "LIVE", "1H", "2H", "PAUSED"]:
             
             # CÁLCULO AUTÓNOMO DEL MINUTO REAL:
-            # Como la API no avanza el minuto, calculamos exactamente cuántos minutos 
-            # han transcurrido desde la hora de inicio oficial (utc_date) del partido.
             minuto_calculado = 0
             utc_str = p.get("utc_date", "")
             if utc_str:
@@ -407,7 +403,6 @@ def evaluar_y_notificar_avanzado():
                 except Exception:
                     pass
             
-            # Si la API da un minuto válido lo usamos, si no, usamos nuestro cálculo real por hora
             minuto_final = p.get("minute", 0)
             if minuto_final <= 0 and minuto_calculado > 0:
                 minuto_final = minuto_calculado
@@ -417,7 +412,6 @@ def evaluar_y_notificar_avanzado():
                 continue
 
             # --- 1. MERCADO BTTS PREVIO (Ambos Marcan) ---
-            # Criterio: Partido 0-0 con al menos 20 minutos de juego real transcurrido
             condicion_btts = (total_goles == 0 and minuto_final >= 20)
             
             if condicion_btts and f"{fixture_id}_btts_ant" not in partidos_alertados_hoy:
@@ -434,7 +428,6 @@ def evaluar_y_notificar_avanzado():
                 nuevas_alertas += 1
 
             # --- 2. MERCADO OVER 1.5 GOLES ---
-            # Criterio: Partido cerrado (0-0 o 1-0) con al menos 30 minutos recorridos
             condicion_over15 = (total_goles <= 1 and minuto_final >= 30)
             
             if condicion_over15 and f"{fixture_id}_ov15_ant" not in partidos_alertados_hoy:
@@ -451,7 +444,6 @@ def evaluar_y_notificar_avanzado():
                 nuevas_alertas += 1
 
             # --- 3. MERCADO OVER 2.5 GOLES (Cuota Alta) ---
-            # Criterio: Partido con 1 gol anotado y entrado ya en el segundo tiempo (minuto >= 50)
             condicion_over25 = (total_goles == 1 and minuto_final >= 50)
             
             if condicion_over25 and f"{fixture_id}_ov25_ant" not in partidos_alertados_hoy:
@@ -468,7 +460,9 @@ def evaluar_y_notificar_avanzado():
                 nuevas_alertas += 1
 
     log_diag(f"Evaluación completada. Nuevas alertas previas en este ciclo: {nuevas_alertas}")
+                
 
+     
 
 def _poll_updates(offset: int):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates?offset={offset}&timeout=50"
