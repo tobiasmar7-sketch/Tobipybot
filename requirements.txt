@@ -1,7 +1,2 @@
 requests
 flask
-import json
-import os
-from datetime import datetime, timezone
-
-ARCHIVO_HISTORIAL = "historial_apuestas.json"
